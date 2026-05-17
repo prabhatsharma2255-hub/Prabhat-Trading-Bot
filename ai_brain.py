@@ -141,20 +141,21 @@ class AIBrain:
         return True, "OK"
     
     def check_htf_alignment(self, htf_bullish: bool, direction: str) -> Tuple[bool, str]:
-        """Check HTF alignment - weighted confidence, block only conflicting"""
+        """Check HTF alignment - block only clear conflicts"""
         if not direction or direction == "NONE":
             return False, "no_direction"
         
         if htf_bullish and direction == "LONG":
-            return True, "htf_bull_strong"
-        elif not htf_bullish and direction == "SHORT":
-            return True, "htf_bear_strong"
+            return True, "bull_aligned"
         elif htf_bullish and direction == "SHORT":
-            return False, "htf_conflict"
-        elif not htf_bullish and direction == "LONG":
-            return False, "htf_conflict"
+            return False, "bull_vs_short_conflict"
         
-        return True, "htf_neutral"
+        if direction == "LONG":
+            return True, "neutral_ok"
+        elif direction == "SHORT":
+            return True, "neutral_ok"
+        
+        return True, "neutral_ok"
     
     def scan_setups(self, state: MarketState, velocity_data: Dict = None, 
                  news_engine=None, move_detector=None, ltf_candles: List = None) -> List[SetupResult]:

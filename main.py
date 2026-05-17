@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-main.py - Single Cycle Test with Setup-Based System
+main.py - Delta Exchange Trading Bot
+Runs continuously 24/7 on Render
 """
 
 import os
@@ -17,31 +18,18 @@ def main():
     api_secret = config.DELTA_API_SECRET
 
     print("=" * 60)
-    print("DELTA AI TRADING BOT - SINGLE CYCLE TEST")
+    print("DELTA AI TRADING BOT - 24/7 CONTINUOUS MODE")
     print("=" * 60)
     print(f"Mode: {'DRY RUN' if config.DRY_RUN else 'LIVE'}")
     print(f"Symbol: {config.SYMBOL}")
+    print(f"Poll Interval: {config.POLLING_INTERVAL} seconds")
     print("=" * 60)
     sys.stdout.flush()
 
     bot = TradingBot(api_key, api_secret)
-
-    intel = bot.get_market_intelligence()
-    print(f"\n--- MARKET INTELLIGENCE ---")
-    print(f"Sentiment: {intel['sentiment']} ({intel['composite']:.1f})")
-    print(f"Fear & Greed: {intel['fear_greed']}")
-    print(f"Funding: {intel['funding_rate']:.4f}% ({intel['funding_bias']})")
-    print(f"Velocity: 1m={intel['velocity_1m']:.2f}% | 3m={intel['velocity_3m']:.2f}%")
-    print(f"Whale: {intel['whale_event']} | Urgent: {intel['urgent_event']}")
-
-    print("\n--- Running Market Analysis ---\n")
-    sys.stdout.flush()
-
-    analysis = bot.analyze_market()
     
-    print("\n" + "=" * 60)
-    print("Done! Bot test complete.")
-    print("=" * 60)
+    # Run continuous loop - this runs 24/7
+    bot.run()
 
 
 if __name__ == "__main__":
