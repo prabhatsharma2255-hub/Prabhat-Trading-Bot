@@ -29,6 +29,7 @@ def init_db():
         regime TEXT,
         module_used TEXT,
         grade TEXT,
+        mode INTEGER,
         entry_price REAL,
         exit_price REAL,
         size REAL,
