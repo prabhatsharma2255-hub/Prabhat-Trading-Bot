@@ -1,0 +1,115 @@
+2026-05-17 20:42:42,138 - INFO - === TRADING BOT STARTED ===
+2026-05-17 20:42:42,139 - INFO - Capital: $100.0
+2026-05-17 20:42:42,139 - INFO - Max Risk/Trade: $5.0
+2026-05-17 20:42:42,139 - INFO - Mode: DRY RUN
+2026-05-17 20:42:42,140 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:42:43,367 - ERROR - Error: 'ascii' codec can't encode characters in position 0-2: ordinal not in range(128)
+2026-05-17 20:46:44,173 - INFO - === TRADING BOT STARTED ===
+2026-05-17 20:46:44,206 - INFO - Capital: $100.0
+2026-05-17 20:46:44,207 - INFO - Max Risk/Trade: $5.0
+2026-05-17 20:46:44,207 - INFO - Mode: DRY RUN
+2026-05-17 20:46:44,208 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:46:44,983 - WARNING - No candles retrieved for 15m
+2026-05-17 20:46:44,985 - ERROR - Failed to get 15m candles
+2026-05-17 20:46:44,986 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:47:34,907 - INFO - === TRADING BOT STARTED ===
+2026-05-17 20:47:34,910 - INFO - Capital: $100.0
+2026-05-17 20:47:34,911 - INFO - Max Risk/Trade: $5.0
+2026-05-17 20:47:34,911 - INFO - Mode: DRY RUN
+2026-05-17 20:47:34,912 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:47:35,546 - WARNING - No candles retrieved for 15m
+2026-05-17 20:47:35,548 - ERROR - Failed to get 15m candles
+2026-05-17 20:47:35,549 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:49:39,232 - INFO - === TRADING BOT STARTED ===
+2026-05-17 20:49:39,235 - INFO - Capital: $100.0
+2026-05-17 20:49:39,236 - INFO - Max Risk/Trade: $5.0
+2026-05-17 20:49:39,236 - INFO - Mode: DRY RUN
+2026-05-17 20:49:39,237 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:49:39,975 - WARNING - No candles retrieved for 15m
+2026-05-17 20:49:39,976 - ERROR - Failed to get 15m candles
+2026-05-17 20:49:39,978 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:50:39,980 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:50:40,239 - WARNING - No candles retrieved for 15m
+2026-05-17 20:50:40,241 - ERROR - Failed to get 15m candles
+2026-05-17 20:50:40,243 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:52:16,439 - INFO - === TRADING BOT STARTED ===
+2026-05-17 20:52:16,441 - INFO - Capital: $100.0
+2026-05-17 20:52:16,441 - INFO - Max Risk/Trade: $5.0
+2026-05-17 20:52:16,442 - INFO - Mode: DRY RUN
+2026-05-17 20:52:16,442 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:52:17,183 - WARNING - No candles retrieved for 15m
+2026-05-17 20:52:17,184 - ERROR - Failed to get 15m candles
+2026-05-17 20:52:17,185 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:52:17,403 - WARNING - No candles retrieved for 15m
+2026-05-17 20:52:17,405 - ERROR - Failed to get 15m candles
+2026-05-17 20:52:17,407 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:53:28,936 - INFO - === TRADING BOT STARTED ===
+2026-05-17 20:53:28,938 - INFO - Capital: $100.0
+2026-05-17 20:53:28,938 - INFO - Max Risk/Trade: $5.0
+2026-05-17 20:53:28,939 - INFO - Mode: DRY RUN
+2026-05-17 20:53:28,939 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:53:29,665 - WARNING - No candles retrieved for 15m
+2026-05-17 20:53:29,666 - ERROR - Failed to get 15m candles
+2026-05-17 20:53:29,667 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:53:29,887 - WARNING - No candles retrieved for 15m
+2026-05-17 20:53:29,889 - ERROR - Failed to get 15m candles
+2026-05-17 20:53:29,890 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:54:05,732 - INFO - === TRADING BOT STARTED ===
+2026-05-17 20:54:05,734 - INFO - Capital: $100.0
+2026-05-17 20:54:05,735 - INFO - Max Risk/Trade: $5.0
+2026-05-17 20:54:05,735 - INFO - Mode: DRY RUN
+2026-05-17 20:54:05,736 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:54:06,460 - WARNING - No candles retrieved for 15m
+2026-05-17 20:54:06,462 - ERROR - Failed to get 15m candles
+2026-05-17 20:54:06,463 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:54:06,694 - WARNING - No candles retrieved for 15m
+2026-05-17 20:54:06,695 - ERROR - Failed to get 15m candles
+2026-05-17 20:54:06,696 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:54:21,696 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:54:21,915 - WARNING - No candles retrieved for 15m
+2026-05-17 20:54:21,917 - ERROR - Failed to get 15m candles
+2026-05-17 20:54:21,918 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:54:36,920 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:54:37,145 - WARNING - No candles retrieved for 15m
+2026-05-17 20:54:37,147 - ERROR - Failed to get 15m candles
+2026-05-17 20:54:37,148 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:54:52,149 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:54:52,391 - WARNING - No candles retrieved for 15m
+2026-05-17 20:54:52,393 - ERROR - Failed to get 15m candles
+2026-05-17 20:54:52,394 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:55:07,396 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:55:07,627 - WARNING - No candles retrieved for 15m
+2026-05-17 20:55:07,628 - ERROR - Failed to get 15m candles
+2026-05-17 20:55:07,629 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:55:22,629 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:55:22,869 - WARNING - No candles retrieved for 15m
+2026-05-17 20:55:22,871 - ERROR - Failed to get 15m candles
+2026-05-17 20:55:22,872 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:55:37,873 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:55:38,116 - WARNING - No candles retrieved for 15m
+2026-05-17 20:55:38,117 - ERROR - Failed to get 15m candles
+2026-05-17 20:55:38,118 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:55:53,120 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:55:53,358 - WARNING - No candles retrieved for 15m
+2026-05-17 20:55:53,360 - ERROR - Failed to get 15m candles
+2026-05-17 20:55:53,361 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:56:08,363 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:56:08,606 - WARNING - No candles retrieved for 15m
+2026-05-17 20:56:08,607 - ERROR - Failed to get 15m candles
+2026-05-17 20:56:08,607 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:56:23,608 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:56:23,857 - WARNING - No candles retrieved for 15m
+2026-05-17 20:56:23,858 - ERROR - Failed to get 15m candles
+2026-05-17 20:56:23,860 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:56:38,861 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:56:39,386 - WARNING - No candles retrieved for 15m
+2026-05-17 20:56:39,388 - ERROR - Failed to get 15m candles
+2026-05-17 20:56:39,389 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:56:54,391 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:56:54,631 - WARNING - No candles retrieved for 15m
+2026-05-17 20:56:54,632 - ERROR - Failed to get 15m candles
+2026-05-17 20:56:54,632 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
+2026-05-17 20:57:09,633 - INFO - === ANALYZING MARKET ===
+2026-05-17 20:57:09,894 - WARNING - No candles retrieved for 15m
+2026-05-17 20:57:09,896 - ERROR - Failed to get 15m candles
+2026-05-17 20:57:09,897 - INFO - Stats: 0 trades, Win Rate: 0.0%, PnL: $0.00
