@@ -67,10 +67,10 @@ def get_trades(limit=20):
                     trade["current_pnl"] = (entry - current_price) * size * leverage
                 trade["current_price"] = current_price
             else:
-                trade["current_pnl"] = 0
+                trade["current_pnl"] = float(trade.get("pnl_usd", 0))
                 trade["current_price"] = 0
         except:
-            trade["current_pnl"] = 0
+            trade["current_pnl"] = float(trade.get("pnl_usd", 0))
             trade["current_price"] = 0
             
         trades.append(trade)

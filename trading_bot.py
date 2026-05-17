@@ -388,6 +388,8 @@ class TradingBot:
             if idx < len(self.open_positions):
                 pos = self.open_positions.pop(idx)
                 
+                logger.info(f"CLOSING: {pos['direction']} Entry={pos['entry_price']} Exit={current_price} PnL=${pnl}")
+                
                 close_result = self.client.close_position(pos["direction"], pos["size"])
                 
                 self.balance += pnl
