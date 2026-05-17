@@ -223,6 +223,10 @@ class TradingBot:
         if not analysis.get("can_trade") or not analysis.get("setup"):
             return False
         
+        if len(self.open_positions) >= config.MAX_OPEN_POSITIONS:
+            logger.warning(f"Max open positions reached: {config.MAX_OPEN_POSITIONS}")
+            return False
+        
         setup = analysis["setup"]
         state = analysis["state"]
         
