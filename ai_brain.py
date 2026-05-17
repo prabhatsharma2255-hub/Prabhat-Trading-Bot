@@ -131,6 +131,56 @@ class AIBrain:
         
         return "ny", True
     
+    def get_session_aggression(self) -> Dict:
+        """Get dynamic aggression settings based on session"""
+        session, can_trade = self.get_session()
+        
+        if session == "dead":
+            return {
+                "session": session,
+                "leverage_mod": -2,
+                "confidence_boost": 0,
+                "min_conditions": 4,
+                "max_daily_multiplier": 0.5,
+                "description": "DEAD - reduce aggression"
+            }
+        elif session == "asia":
+            return {
+                "session": session,
+                "leverage_mod": -1,
+                "confidence_boost": 0,
+                "min_conditions": 3,
+                "max_daily_multiplier": 0.7,
+                "description": "ASIA - moderate caution"
+            }
+        elif session == "london":
+            return {
+                "session": session,
+                "leverage_mod": 0,
+                "confidence_boost": 1,
+                "min_conditions": 2,
+                "max_daily_multiplier": 1.0,
+                "description": "LONDON - active trading"
+            }
+        elif session == "ny":
+            return {
+                "session": session,
+                "leverage_mod": 1,
+                "confidence_boost": 2,
+                "min_conditions": 2,
+                "max_daily_multiplier": 1.0,
+                "description": "NY - most aggressive"
+            }
+        
+        return {
+            "session": session,
+            "leverage_mod": 0,
+            "confidence_boost": 0,
+            "min_conditions": 2,
+            "max_daily_multiplier": 1.0,
+            "description": "default"
+        }
+    
     def can_trade(self) -> Tuple[bool, str]:
         """Check daily limits"""
         self.reset_daily()
@@ -1175,6 +1225,19 @@ class AIBrain:
                 triggered_setup.risk_pct *= risk_mult
                 triggered_setup.leverage = min(triggered_setup.leverage + lev_boost, 10)
         
+        # Apply SESSION-BASED DYNAMIC AGGRESSION
+        if triggered_setup:
+            session_aggression = self.get_session_aggression()
+            
+            session_leverage_mod = session_aggression["leverage_mod"]
+            session_risk_mult = session_aggression["max_daily_multiplier"]
+            
+            triggered_setup.leverage = max(1, min(10, triggered_setup.leverage + session_leverage_mod))
+            triggered_setup.risk_pct *= session_risk_mult
+            
+            logger.info(f"SESSION: {session_aggression['session']} | {session_aggression['description']}")
+            logger.info(f"Leverage adjusted: +{session_leverage_mod}x | Risk: {session_risk_mult}x")
+        
         if triggered_setup:
             self.trades_today += 1
             if triggered_setup.setup_name == "SQUEEZE_BREAKOUT":
@@ -1184,10 +1247,13 @@ class AIBrain:
             elif triggered_setup.setup_name == "NEWS_SPIKE":
                 self.news_trades_today += 1
         
+        session_aggression = self.get_session_aggression()
+        
         return {
             "can_trade": triggered_setup is not None,
             "state": state,
             "session": session,
+            "session_aggression": session_aggression,
             "setup": triggered_setup,
             "skip_reason": reason if not triggered_setup else None,
             "all_setups": setups
