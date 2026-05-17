@@ -278,16 +278,16 @@ class DeltaClient:
         data = self._request("GET", f"/v2/orders?product_id={symbol}&state=open")
         return data.get("result", []) if data else []
 
-    def place_order(self, order_type: str, side: str, size: float,
+def place_order(self, order_type: str, side: str, size: float,
                     price: Optional[float] = None,
                     stop_loss: Optional[float] = None,
                     take_profit: Optional[float] = None,
                     leverage: int = 1) -> Optional[Dict]:
-        """Place a futures order."""
+        """Place a futures order. SL/TP managed by bot, not exchange."""
         if config.DRY_RUN:
-            logger.info(f"[DRY RUN] Would place: {order_type} {side} {size} @ {price or 'market'}")
+            logger.info(f"[DRY RUN] Would place: {order_type} {side} {size} @ {price or 'market'} | SL: {stop_loss} | TP: {take_profit}")
             return {"order_id": "dry_run_order", "state": "open", "dry_run": True}
-
+        
         symbol = self._symbol_cache or config.SYMBOL
         order_params = {
             "product_id": symbol,
@@ -296,14 +296,10 @@ class DeltaClient:
             "order_type": order_type,
             "leverage": leverage
         }
-
+        
         if price:
             order_params["price"] = str(price)
-        if stop_loss:
-            order_params["stop_loss"] = str(stop_loss)
-        if take_profit:
-            order_params["take_profit"] = str(take_profit)
-
+        
         result = self._request("POST", "/v2/orders", order_params)
         
         if result and "result" in result:

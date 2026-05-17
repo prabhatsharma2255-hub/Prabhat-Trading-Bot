@@ -66,6 +66,42 @@ class TradingBot:
                 logger.warning(f"Move Detector init failed: {e}")
         
         self._run_connection_test()
+        
+        if not config.DRY_RUN:
+            self._sync_positions()
+    
+    def _sync_positions(self):
+        """Sync local positions with exchange."""
+        try:
+            exchange_positions = self.client.get_positions()
+            self.open_positions = []
+            
+            for pos in exchange_positions:
+                size = float(pos.get("size", 0))
+                if size <= 0:
+                    continue
+                
+                direction = "LONG" if pos.get("side") == "buy" else "SHORT"
+                entry_price = float(pos.get("avg_price", 0))
+                
+                self.open_positions.append({
+                    "direction": direction,
+                    "entry_price": entry_price,
+                    "size": abs(size),
+                    "stop_loss": 0,
+                    "take_profit_1": 0,
+                    "take_profit_2": 0,
+                    "leverage": 1,
+                    "setup": "synced",
+                    "risk_amount": 0,
+                    "opened_at": pos.get("created_at", ""),
+                    "tp1_hit": False,
+                    "tp2_hit": False
+                })
+            
+            logger.info(f"Synced {len(self.open_positions)} positions from exchange")
+        except Exception as e:
+            logger.warning(f"Position sync failed: {e}")
     
     def get_market_intelligence(self) -> Dict:
         intel = {
@@ -234,7 +270,6 @@ class TradingBot:
                 logger.warning(f"Setup {setup.setup_name} already open - blocking")
                 return False
         
-        state = analysis["state"]
         state = analysis["state"]
         
         can_trade, reason = self.ai_brain.can_trade()
