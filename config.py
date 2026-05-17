@@ -1,9 +1,6 @@
 """
-Configuration for Delta Exchange AI Trading Bot
-
-DUAL TRADE MODES:
-- Mode 1: Conviction Trade (4-5/5 signals, full size)
-- Mode 2: Calculated Risk Trade (3/5 signals + price action, smaller size)
+Delta Exchange Trading Bot - Complete System
+12 SETUPS: 6 swing + 3 scalp + 3 aggressive
 """
 
 import os
@@ -12,127 +9,162 @@ import os
 DELTA_API_KEY = os.getenv("DELTA_API_KEY", "AiFZdExVer9VSEIrBNBZX1djmGHQHZ")
 DELTA_API_SECRET = os.getenv("DELTA_API_SECRET", "jjlSbOMqME3vOwjZ7RZamFi8UGM3hmf0M6fsx3D8632a2BISpggy7x5eiaTH")
 
-# Symbol - will be auto-verified on startup
+# Symbol
 SYMBOL = "BTCUSD"
-TRADING_PAIR = "BTCUSD"
 
-# Capital
+# Account
 STARTING_CAPITAL = 100.0
+DRY_RUN = False  # LIVE TRADING ENABLED
 
 # ============================================================
-# TRADE MODE SETTINGS
+# SETUP RISKS AND LEVERAGE
 # ============================================================
 
-# Mode 1: Conviction Trade (sniper shot - high confidence)
-MIN_SIGNALS_MODE1 = 4       # 4-5/5 signals required
+# Swing Setups (1-6, 12)
+SETUP_SQUEEZE_RISK = 0.030      # 3%
+SETUP_SQUEEZE_LEV = 7
+SETUP_LIQ_SWEEP_RISK = 0.025    # 2.5%
+SETUP_LIQ_SWEEP_LEV = 6
+SETUP_BNR_RISK = 0.025          # 2.5%
+SETUP_BNR_LEV = 5
+SETUP_PULLBACK_RISK = 0.025     # 2.5%
+SETUP_PULLBACK_LEV = 5
+SETUP_FIBONACCI_RISK = 0.020     # 2%
+SETUP_FIBONACCI_LEV = 5
+SETUP_VWAP_REVERT_RISK = 0.020   # 2%
+SETUP_VWAP_REVERT_LEV = 4
+SETUP_FUNDING_SQUEEZE_RISK = 0.025  # 2.5%
+SETUP_FUNDING_SQUEEZE_LEV = 5
 
-# Mode 2: Calculated Risk Trade (more opportunities)
-MIN_SIGNALS_MODE2 = 3       # 3/5 signals required
-REQUIRE_PRICE_ACTION = True # Mode 2 must have price action signal
+# Scalp Setups (7-9)
+SETUP_RIBBON_SCALP_RISK = 0.015   # 1.5%
+SETUP_RIBBON_SCALP_LEV = 5
+SETUP_VOLUME_BURST_RISK = 0.020   # 2%
+SETUP_VOLUME_BURST_LEV = 6
+SETUP_MICRO_BOS_RISK = 0.015       # 1.5%
+SETUP_MICRO_BOS_LEV = 5
 
-# ============================================================
-# SIZING (Percentage of account)
-# ============================================================
-
-# Mode 1 Sizing
-RISK_MODE1_GRADE_A = 0.03   # 3% - full conviction
-RISK_MODE1_GRADE_B = 0.02   # 2% - good conviction
-RISK_MODE1_GRADE_C = 0.01   # 1% - lower conviction
-
-# Mode 2 Sizing
-RISK_MODE2_DEFAULT = 0.015  # 1.5% - standard risk mode
-RISK_MODE2_REDUCED = 0.01   # 1% - after 2 consecutive losses
-RISK_MODE2_BOOSTED = 0.02   # 2% - pattern memory says edge found
-
-# ============================================================
-# LEVERAGE
-# ============================================================
-
-MAX_LEV_MODE1_TREND = 6            # Mode 1 in trending
-MAX_LEV_MODE1_BREAKOUT = 7          # Mode 1 breakout (high conviction)
-MAX_LEV_MODE1_HIGH_VOL = 4          # Mode 1 high volatility
-MAX_LEV_MODE2 = 4                   # Mode 2 max leverage
-MAX_LEV_HIGH_VOL = 4                # High volatility cap
-
-# ============================================================
-# STOP LOSS
-# ============================================================
-
-ATR_MULTIPLIER_MODE1 = 1.5   # 1.5x ATR for Mode 1
-ATR_MULTIPLIER_MODE2 = 1.2   # 1.2x ATR for Mode 2 (tighter)
-MAX_SL_DISTANCE_PCT = 0.02   # 2% max SL width
+# Aggressive Setups (10-12)
+SETUP_ROCKET_RISK = 0.015          # 1.5%
+SETUP_ROCKET_LEV = 6
+SETUP_NEWS_SPIKE_RISK = 0.020      # 2%
+SETUP_NEWS_SPIKE_LEV = 5
+SETUP_NEWS_WHALE_LEV = 7           # 7x for whale events
 
 # ============================================================
-# TAKE PROFIT - MODE 1 (Multiple of risk)
+# INDICATOR PARAMETERS
 # ============================================================
 
-TP1_R_MODE1 = 1.5   # Close 40% at 1.5R
-TP2_R_MODE1 = 2.5   # Close 40% at 2.5R
-TP3_R_MODE1 = 4.0   # Close 20% at 4.0R
+RSI_PERIOD = 14
+MACD_FAST = 12
+MACD_SLOW = 26
+MACD_SIGNAL = 9
+ADX_PERIOD = 14
+ATR_PERIOD = 14
+BB_PERIOD = 20
+BB_STD = 2.0
+KC_PERIOD = 20
+KC_MULT = 1.5
+SWING_LOOKBACK = 3
+FIB_MIN_RANGE_PCT = 0.02
+EQUAL_LEVEL_TOLERANCE = 0.002
+LTF_CANDLES = 200
+HTF_CANDLES = 100
 
-TP1_CLOSE_PCT = 0.40
-TP2_CLOSE_PCT = 0.40
-TP3_CLOSE_PCT = 0.20
-
-# ============================================================
-# TAKE PROFIT - MODE 2 (Tighter - exit faster)
-# ============================================================
-
-TP1_R_MODE2 = 1.2   # Close 50% at 1.2R
-TP2_R_MODE2 = 2.0   # Close 50% at 2.0R
-# NO TP3 for Mode 2 - exit fully at TP2
-
-TP1_CLOSE_PCT_MODE2 = 0.50
-TP2_CLOSE_PCT_MODE2 = 0.50
-
-# ============================================================
-# DAILY LIMITS
-# ============================================================
-
-MAX_TRADES_DAY = 8           # Total max trades per day
-MAX_MODE1_TRADES_DAY = 3     # Max conviction trades
-MAX_MODE2_TRADES_DAY = 5     # Max risk trades
-MAX_DAILY_DD_PCT = 0.07      # 7% max daily drawdown
-
-MODE2_SUSPEND_CONSEC_LOSSES = 3  # Suspend Mode 2 after 3 losses
-MAX_CONSECUTIVE_LOSSES = 3       # Pause after 3 consecutive losses
+# Scalp-specific
+SCALP_3M_CANDLES = 150
+SCALP_1M_CANDLES = 100
+SCALP_RSI_PERIOD = 7
+SCALP_EMA_PERIODS = [5, 8, 13, 21]
 
 # ============================================================
-# PATTERN MEMORY (Own Brain)
+# DAILY LIMITS (COMBINED 12 SETUPS)
 # ============================================================
 
-PATTERN_MEMORY_MIN_SAMPLES = 10    # Min trades before using pattern data
-PATTERN_MEMORY_BOOST_THRESHOLD = 0.55   # Win rate > 55% = boost size
-PATTERN_MEMORY_REDUCE_THRESHOLD = 0.35  # Win rate < 35% = skip Mode 2
-LEARNING_MODE_TRADES = 20              # First 20 trades = learning mode
+MAX_TOTAL_TRADES_DAY = 12
+MAX_TRADES_PER_DAY = 12
+MAX_SWING_TRADES = 5       # setups 1-6, 12
+MAX_SCALP_TRADES = 7       # setups 7-9
+MAX_ROCKET_TRADES = 4     # setup 10
+MAX_NEWS_TRADES = 3       # setup 11
+MAX_OPEN_POSITIONS = 3
+MAX_DAILY_DD_PCT = 0.08    # 8%
+MAX_DAILY_RISK_TOTAL = 0.12
+
+# Aggressive Setup Guards
+ROCKET_SUSPEND_LOSSES = 3
+ROCKET_REENTRY_ALLOWED = 1
+NEWS_SPIKE_TIME_LIMIT_MIN = 20
+FUNDING_TIME_LIMIT_HRS = 4
+FORCE_SCALP_CLOSE_MIN = 25
 
 # ============================================================
-# FILTERS
+# VELOCITY & EXPLOSION THRESHOLDS
 # ============================================================
 
-HTF_CANDLES = 100            # 1h candles to fetch
-LTF_CANDLES = 200            # 15m candles to fetch
-MIN_VOLUME_RATIO_MODE2 = 1.3 # Mode 2 requires >1.3x avg volume
+VELOCITY_1M_THRESHOLD = 0.004   # 0.4%
+VELOCITY_3M_THRESHOLD = 0.008   # 0.8%
+VELOCITY_5M_THRESHOLD = 0.015   # 1.5%
+VOLUME_EXPLOSION_MULT = 5.0
+FUNDING_CROWDED_THRESHOLD = 0.0008  # 0.08%
+FUNDING_NORMAL_THRESHOLD = 0.0003   # 0.03%
+
+# ============================================================
+# NEWS API CONFIG
+# ============================================================
+
+CRYPTOPANIC_TOKEN = "your_free_token_here"
+NEWS_POLL_INTERVAL_MIN = 5
+FNG_POLL_INTERVAL_MIN = 60
+COINGECKO_POLL_MIN = 15
+RSS_POLL_INTERVAL_MIN = 3
+MEMPOOL_POLL_MIN = 10
+FUNDING_POLL_MIN = 10
+OI_POLL_MIN = 5
+
+SENTIMENT_BOOST_THRESHOLD = 20
+SENTIMENT_BLOCK_LONG = -50
+SENTIMENT_BLOCK_SHORT = 50
+FNG_EXTREME_FEAR = 15
+FNG_EXTREME_GREED = 85
+WHALE_EVENT_EXPIRY_HRS = 4
+BLACK_SWAN_SUSPEND_HRS = 4
+BLACK_SWAN_REDUCED_SIZE_HRS = 24
+
+NEWS_FULL_WEIGHT_MIN = 15
+NEWS_DECAY_1HR = 0.7
+NEWS_DECAY_4HR = 0.4
+NEWS_EXPIRED_HRS = 4
+
+# ============================================================
+# MOVE DETECTOR CONFIG
+# ============================================================
+
+MOVE_DETECTOR_INTERVAL_SEC = 30
+MICRO_SURGE_PCT = 0.4
+EXPLOSIVE_MOVE_PCT = 1.5
+
+# ============================================================
+# SESSIONS (UTC)
+# ============================================================
+
+SESSION_ASIA_START = 2
+SESSION_LONDON_START = 7
+SESSION_NY_START = 13
+SESSION_DEAD_START = 22
+SESSION_DEAD_END = 2
 
 # ============================================================
 # EXECUTION
 # ============================================================
 
-POLLING_INTERVAL = 60             # seconds between cycles
-ANTI_CHASE_PCT = 0.003            # 0.3% max slippage allowed
-ORDER_TIMEOUT_SECONDS = 30
-MAX_OPEN_POSITIONS = 2
-CANDLE_CLOSE_WAIT = True          # Wait for candle close before entry
-
-# Timeframes
+POLLING_INTERVAL = 60
 TIMEFRAMES = {
     "entry": "15m",
-    "filter": "1h"
+    "filter": "1h",
+    "scalp_3m": "3m",
+    "scalp_1m": "1m"
 }
 
-# Logging
-ENABLE_LOGGING = True
 LOG_FILE = "trading_bot.log"
-
-# MODE - SET TO TRUE FOR DRY RUN, FALSE FOR LIVE
-DRY_RUN = False
+ENABLE_LOGGING = True

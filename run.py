@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
-run.py - 24/7 Continuous Trading Bot
-
-Production-grade 24/7 trading loop with error recovery and logging.
+run.py - 24/7 Trading Bot with Setup-Based System
 """
 
 import os
@@ -19,25 +17,16 @@ def main():
     api_secret = config.DELTA_API_SECRET
 
     print("=" * 60)
-    print("DELTA EXCHANGE AI TRADING BOT - DUAL MODE")
+    print("DELTA EXCHANGE AI TRADING BOT - SETUP BASED")
     print("=" * 60)
     print(f"Mode: {'DRY RUN' if config.DRY_RUN else 'LIVE TRADING'}")
     print(f"Symbol: {config.SYMBOL}")
     print(f"Starting Capital: ${config.STARTING_CAPITAL}")
-    print(f"Mode 1 Risk: {config.RISK_MODE1_GRADE_A*100}% (Conviction)")
-    print(f"Mode 2 Risk: {config.RISK_MODE2_DEFAULT*100}% (Calculated)")
-    print(f"Max Trades/Day: {config.MAX_TRADES_DAY}")
+    print(f"Max Trades/Day: {config.MAX_TRADES_PER_DAY}")
     print(f"Polling Interval: {config.POLLING_INTERVAL}s")
     print("=" * 60)
     print()
     sys.stdout.flush()
-
-    if not api_key or api_key == "YOUR_API_KEY":
-        print("WARNING: No API key configured!")
-        print("Bot will run but cannot place real orders.")
-        print("Set DELTA_API_KEY and DELTA_API_SECRET to enable live trading.")
-        print()
-        sys.stdout.flush()
 
     bot = TradingBot(api_key, api_secret)
     

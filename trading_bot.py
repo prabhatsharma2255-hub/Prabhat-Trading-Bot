@@ -1,8 +1,7 @@
 """
-Trading Bot - Dual Mode Execution Engine
+Trading Bot - Setup-Based Execution Engine
 
-MODE 1: Conviction Trade (4-5/5 signals, full size)
-MODE 2: Calculated Risk Trade (3/5 signals + price action, smaller size)
+Works with 12 named setups + News Intelligence + Move Detection
 """
 
 import time
@@ -12,10 +11,19 @@ from typing import Dict, Optional, List
 
 import config
 from delta_client import DeltaClient
-from indicators import TechnicalIndicators
-from ai_brain import AIBrain, TradeMode
-from risk_manager import RiskManager
+from indicators import Indicators
+from ai_brain import AIBrain
 import dashboard
+
+try:
+    from news_engine import NewsEngine
+except ImportError:
+    NewsEngine = None
+
+try:
+    from move_detector import MoveDetector
+except ImportError:
+    MoveDetector = None
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,19 +39,78 @@ logger = logging.getLogger(__name__)
 class TradingBot:
     def __init__(self, api_key: str, api_secret: str):
         self.client = DeltaClient(api_key, api_secret)
-        self.ai_brain = AIBrain()
-        self.risk_manager = RiskManager(config.STARTING_CAPITAL)
+        
+        self.news_engine = None
+        self.move_detector = None
+        
+        if NewsEngine:
+            try:
+                self.news_engine = NewsEngine()
+                self.news_engine.warm_up()
+                logger.info("News Engine initialized and warmed up")
+            except Exception as e:
+                logger.warning(f"News Engine init failed: {e}")
+        
+        self.ai_brain = AIBrain(news_engine=self.news_engine)
         
         self.last_analysis_time = 0
-        self.last_candle_time = 0
-        self.is_running = False
+        self.open_positions = []
+        self.balance = config.STARTING_CAPITAL
         
-        self.open_positions: List[Dict] = []
+        if MoveDetector:
+            try:
+                self.move_detector = MoveDetector(self.client)
+                self.move_detector.start()
+                logger.info("Move Detector started")
+            except Exception as e:
+                logger.warning(f"Move Detector init failed: {e}")
         
         self._run_connection_test()
-
+    
+    def get_market_intelligence(self) -> Dict:
+        intel = {
+            "sentiment": "neutral",
+            "composite": 0,
+            "fear_greed": 50,
+            "fear_greed_trend": "flat",
+            "funding_rate": 0,
+            "funding_bias": "neutral",
+            "velocity_1m": 0,
+            "velocity_3m": 0,
+            "whale_event": "none",
+            "urgent_event": False
+        }
+        
+        if self.news_engine:
+            sentiment = self.news_engine.get_composite_sentiment()
+            intel["sentiment"] = sentiment.get("sentiment_label", "neutral")
+            intel["composite"] = sentiment.get("composite", 0)
+            intel["fear_greed"] = sentiment.get("fear_greed", 50)
+            intel["urgent_event"] = sentiment.get("urgent_event", False)
+            intel["top_headlines"] = sentiment.get("top_headlines", [])
+        
+        if self.move_detector:
+            move_intel = self.move_detector.get_market_intelligence()
+            intel["velocity_1m"] = move_intel.get("velocity_1m", 0)
+            intel["velocity_3m"] = move_intel.get("velocity_3m", 0)
+            intel["funding_rate"] = move_intel.get("funding_rate", 0)
+            intel["funding_bias"] = move_intel.get("funding_bias", "neutral")
+        
+        if self.news_engine:
+            if self.news_engine.whale_event_bull:
+                intel["whale_event"] = "bull"
+            elif self.news_engine.whale_event_bear:
+                intel["whale_event"] = "bear"
+        
+        return intel
+    
+    def check_urgent_event(self) -> bool:
+        if self.news_engine and self.news_engine.urgent_event:
+            logger.warning(f"URGENT EVENT DETECTED: closing positions")
+            return True
+        return False
+    
     def _run_connection_test(self):
-        """Test API connection on startup."""
         logger.info("=" * 60)
         logger.info("RUNNING CONNECTION TEST")
         logger.info("=" * 60)
@@ -57,172 +124,159 @@ class TradingBot:
         
         if result.get('candles_retrieved', 0) == 0:
             logger.error("CRITICAL: No candles retrieved")
-
+    
     def get_market_data(self, timeframe: str, limit: int) -> List[Dict]:
-        """Fetch market data for a timeframe."""
         candles = self.client.get_candles(config.SYMBOL, timeframe, limit)
         return candles if candles else []
-
+    
     def analyze_market(self) -> Optional[Dict]:
-        """Run full market analysis with dual trade modes."""
         now = time.time()
         if now - self.last_analysis_time < config.POLLING_INTERVAL:
             return None
-
+        
         logger.info(f"\n{'='*50}")
-        logger.info(f"CYCLE {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"CYCLE {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        logger.info(f"Balance: ${self.balance:.2f}")
         logger.info(f"{'='*50}")
-
-        # Reset daily counters
-        self.ai_brain.reset_daily_counters()
-        self.risk_manager.reset_daily()
-
+        
         ltf_candles = self.get_market_data(config.TIMEFRAMES["entry"], config.LTF_CANDLES)
         
         if not ltf_candles:
-            logger.warning("No LTF candles retrieved - skipping cycle")
+            logger.warning("No candles retrieved")
             return None
-
-        current_candle_time = ltf_candles[-1].get("time", 0)
-        if current_candle_time == self.last_candle_time:
-            logger.debug("No new candle")
         
-        self.last_candle_time = current_candle_time
-
-        try:
-            ltf_indicators = TechnicalIndicators(ltf_candles).all_indicators()
-        except Exception as e:
-            logger.error(f"Error calculating LTF indicators: {e}")
-            return None
-
-        htf_indicators = None
         htf_candles = self.get_market_data(config.TIMEFRAMES["filter"], config.HTF_CANDLES)
         
-        if htf_candles:
-            try:
-                htf_indicators = TechnicalIndicators(htf_candles).all_indicators()
-            except Exception as e:
-                logger.warning(f"HTF indicators failed: {e}")
-
-        analysis = self.ai_brain.analyze(ltf_indicators, htf_indicators)
+        # Calculate velocity data for aggressive setups
+        velocity_data = self._calculate_velocity(ltf_candles)
         
-        can_trade, reason = self.risk_manager.can_trade(analysis.get("mode", 1))
+        # Pass news_engine and move_detector for aggressive setups
+        analysis = self.ai_brain.analyze(
+            ltf_candles, 
+            htf_candles if htf_candles else None, 
+            velocity_data,
+            self.news_engine,
+            self.move_detector
+        )
         
-        if can_trade and analysis.get("can_trade"):
-            analysis["approved"] = True
-            analysis["skip_reason"] = None
+        state = analysis["state"]
+        
+        logger.info(f"MARKET STATE")
+        logger.info(f"BTC Price: ${state.current_price:.2f} | ATR: ${state.atr:.2f} ({state.atr/state.current_price*100:.2f}%)")
+        logger.info(f"Structure: {state.structure.upper()}")
+        logger.info(f"RSI: {state.rsi:.1f} | Divergence: {state.rsi_divergence}")
+        logger.info(f"MACD: {state.macd_state} | Cross: {state.macd_cross_dir}")
+        logger.info(f"VWAP Zone: {state.vwap_zone} | Event: {state.vwap_event}")
+        logger.info(f"Volume: {state.rvol:.1f}x ({state.rvol_category})")
+        logger.info(f"Squeeze: {'ON' if state.squeeze_on else 'OFF'} ({state.squeeze_bars} bars) | Fired: {state.squeeze_fired}")
+        logger.info(f"Liq Sweep: {'bull' if state.liq_sweep_bull else 'bear' if state.liq_sweep_bear else 'none'}")
+        logger.info(f"Pattern: {state.pattern} | Fib: {state.which_fib if state.which_fib else 'none'}")
+        
+        # Velocity info
+        if velocity_data:
+            logger.info(f"VELOCITY: 1m={velocity_data.get('velocity_1m', 0)*100:.2f}% | 3m={velocity_data.get('velocity_3m', 0)*100:.2f}%")
+        
+        logger.info(f"SETUP SCAN (12 SETUPS)")
+        for i, setup in enumerate(analysis["all_setups"], 1):
+            status = "TRIGGERED" if setup.triggered else "skipped"
+            direction = f"→ {setup.direction}" if setup.triggered else ""
+            logger.info(f"[{i:2d}] {setup.setup_name}: {status} {direction}")
+        
+        logger.info(f"HTF Bias: {'BULLISH' if state.htf_bullish else 'NEUTRAL'}")
+        logger.info(f"Session: {analysis['session']}")
+        
+        if analysis["can_trade"] and analysis["setup"]:
+            setup = analysis["setup"]
+            logger.info(f"DECISION: {setup.direction} at ${state.current_price:.2f}")
+            logger.info(f"Setup: {setup.setup_name}")
+            logger.info(f"SL: ${setup.stop_loss:.2f} | TP1: ${setup.tp1:.2f} | TP2: ${setup.tp2:.2f}")
+            logger.info(f"Risk: {setup.risk_pct*100}% | Leverage: {setup.leverage}x")
         else:
-            analysis["approved"] = False
-            analysis["skip_reason"] = reason or analysis.get("skip_reason")
-
-        stats = self.risk_manager.get_stats()
+            reason = analysis.get("skip_reason", "no_setup")
+            logger.info(f"DECISION: NO TRADE - {reason}")
         
-        mode_str = analysis.get("trade_mode", "none")
-        if mode_str == "mode1_conviction":
-            mode_display = "MODE1"
-        elif mode_str == "mode2_calculated":
-            mode_display = "MODE2"
-        else:
-            mode_display = "NONE"
+        logger.info(f"Open Positions: {len(self.open_positions)}")
         
-        logger.info(f"Balance: ${stats['balance']:.2f} | Peak: ${stats['peak_balance']:.2f} | DD: {stats['drawdown_pct']:.1f}%")
-        logger.info(f"Regime: {analysis.get('regime', 'unknown')} | Session: {analysis.get('session', 'unknown')}")
-        logger.info(f"Signals: {analysis.get('signals_count', 0)}/5 | Mode: {mode_display}")
-        logger.info(f"Direction: {analysis.get('direction', 'NONE')} | HTF: {analysis.get('htf_status', 'N/A')}")
-        
-        if not analysis.get("approved"):
-            logger.info(f"SKIPPED: {analysis.get('skip_reason', 'unknown')}")
-        
-        if stats.get("mode2_suspended"):
-            logger.warning("*** MODE 2 SUSPENDED ***")
-        
-        logger.info(f"Open: {len(self.open_positions)} | Today: {stats['trades_today']}/{config.MAX_TRADES_DAY}")
-
         self.last_analysis_time = now
-        
-        analysis["ltf_indicators"] = ltf_indicators
-        analysis["htf_indicators"] = htf_indicators
         
         return analysis
 
-    def execute_trade(self, analysis: Dict) -> bool:
-        """Execute a trade based on analysis."""
-        if not analysis.get("approved"):
-            return False
-
-        direction = analysis.get("direction", "NONE")
-        if direction == "NONE":
-            return False
-
-        price = analysis.get("current_price", 0)
-        if price == 0:
-            return False
-
-        anti_chase_pct = config.ANTI_CHASE_PCT
-        signal_candle_price = analysis.get("ltf_indicators", {}).get("current_price", price)
+    def _calculate_velocity(self, candles: List[Dict]) -> Dict:
+        if len(candles) < 10:
+            return {"velocity_1m": 0, "velocity_3m": 0}
         
-        if signal_candle_price > 0:
-            price_move_pct = abs(price - signal_candle_price) / signal_candle_price
-            if price_move_pct > anti_chase_pct:
-                logger.warning(f"Price moved {price_move_pct*100:.2f}% since signal - SKIPPING")
-                return False
-
-        can_trade, reason = self.risk_manager.can_trade(analysis.get("mode", 1))
+        prices = [c.get("close", 0) for c in candles]
+        
+        if len(prices) >= 3:
+            vel_1m = (prices[-1] - prices[-3]) / prices[-3]
+        else:
+            vel_1m = 0
+        
+        if len(prices) >= 7:
+            vel_3m = (prices[-1] - prices[-7]) / prices[-7]
+        else:
+            vel_3m = 0
+        
+        return {"velocity_1m": vel_1m, "velocity_3m": vel_3m}
+    
+    def execute_trade(self, analysis: Dict) -> bool:
+        if not analysis.get("can_trade") or not analysis.get("setup"):
+            return False
+        
+        setup = analysis["setup"]
+        state = analysis["state"]
+        
+        can_trade, reason = self.ai_brain.can_trade()
         if not can_trade:
             logger.warning(f"Cannot trade: {reason}")
             return False
-
-        mode = analysis.get("mode", 1)
-        regime = analysis.get("regime", "unknown")
         
-        position_size, risk_amount = self.risk_manager.calculate_position_size(
-            price,
-            analysis.get("stop_loss", 0),
-            mode,
-            regime
-        )
-
-        if position_size <= 0:
-            logger.warning("Position size calculated to 0")
+        price = state.current_price
+        direction = setup.direction
+        
+        risk_amount = self.balance * setup.risk_pct
+        
+        if price > 0 and setup.stop_loss > 0:
+            stop_distance = abs(price - setup.stop_loss)
+            if stop_distance > 0:
+                position_size = risk_amount / stop_distance
+            else:
+                position_size = risk_amount / price
+        else:
             return False
-
+        
+        if position_size * price * setup.leverage < config.MIN_POSITION_USD:
+            logger.warning(f"Position too small: ${position_size * price * setup.leverage}")
+            return False
+        
         side = "buy" if direction == "LONG" else "sell"
-        leverage = analysis.get("leverage", 1)
-
-        mode_str = "MODE1" if mode == 1 else "MODE2"
-        logger.info(f">>> EXECUTING: {mode_str} {direction} {position_size:.4f} @ ${price:.2f} (leverage: {leverage}x)")
-
+        
+        logger.info(f">>> EXECUTING: {setup.setup_name} {direction} {position_size:.4f} @ ${price:.2f}")
+        
         order = self.client.place_order(
             "market", side, position_size, None,
-            analysis.get("stop_loss"),
-            analysis.get("take_profit_2") if mode == 2 else analysis.get("take_profit_3"),
-            leverage
+            setup.stop_loss,
+            setup.tp2,
+            setup.leverage
         )
-
+        
         if order:
             position = {
-                "order_id": order.get("order_id", "unknown"),
                 "direction": direction,
-                "side": side,
                 "entry_price": price,
                 "size": position_size,
-                "stop_loss": analysis.get("stop_loss", 0),
-                "take_profit_1": analysis.get("take_profit_1", 0),
-                "take_profit_2": analysis.get("take_profit_2", 0),
-                "take_profit_3": analysis.get("take_profit_3", 0),
-                "leverage": leverage,
+                "stop_loss": setup.stop_loss,
+                "take_profit_1": setup.tp1,
+                "take_profit_2": setup.tp2,
+                "leverage": setup.leverage,
+                "setup": setup.setup_name,
                 "risk_amount": risk_amount,
-                "mode": mode,
-                "regime": analysis.get("regime", "unknown"),
-                "module": analysis.get("module", "unknown"),
-                "signals_fired": analysis.get("signals_fired", []),
-                "htf_aligned": analysis.get("htf_aligned", False),
-                "session": analysis.get("session", "unknown"),
-                "opened_at": datetime.now().isoformat()
+                "opened_at": datetime.now().isoformat(),
+                "tp1_hit": False,
+                "tp2_hit": False
             }
             
             self.open_positions.append(position)
-            self.risk_manager.record_trade_open(position)
             
             dashboard.log_trade(
                 direction=direction,
@@ -231,131 +285,108 @@ class TradingBot:
                 size=position_size,
                 pnl=0,
                 status="open",
-                confidence=analysis.get("signals_count", 0) * 20,
-                regime=analysis.get("regime", "unknown"),
-                signals=str(analysis.get("signals_fired", [])),
-                htf_aligned=analysis.get("htf_aligned", False),
-                session=analysis.get("session", "unknown"),
-                grade=mode_str,
-                module=analysis.get("module", "unknown")
+                confidence=80,
+                regime=state.structure,
+                signals=setup.setup_name,
+                htf_aligned=state.htf_bullish,
+                session=analysis["session"],
+                grade=setup.setup_name,
+                module=setup.setup_name
             )
             
-            logger.info(f"Trade executed: {mode_str}")
+            logger.info("Trade executed successfully")
             return True
-
+        
         logger.error("Order placement failed")
         return False
-
+    
     def monitor_positions(self, current_price: float):
-        """Monitor open positions for TP/SL management."""
-        positions_to_close = []
+        to_close = []
         
         for i, pos in enumerate(self.open_positions):
-            entry = pos.get("entry_price", 0)
-            direction = pos.get("direction", "")
-            mode = pos.get("mode", 1)
-            sl = pos.get("stop_loss", 0)
-            tp1 = pos.get("take_profit_1", 0)
-            tp2 = pos.get("take_profit_2", 0)
-            risk_amount = pos.get("risk_amount", 0)
+            entry = pos["entry_price"]
+            direction = pos["direction"]
+            sl = pos["stop_loss"]
+            tp1 = pos["take_profit_1"]
+            tp2 = pos["take_profit_2"]
             
             pnl = 0
-            if direction == "LONG" and entry > 0:
-                pnl = (current_price - entry) * pos.get("size", 0)
-            elif direction == "SHORT" and entry > 0:
-                pnl = (entry - current_price) * pos.get("size", 0)
-            
             if direction == "LONG":
-                if sl > 0 and current_price <= sl:
-                    logger.info(f"STOP LOSS: {direction} at ${current_price:.2f}")
-                    positions_to_close.append((i, pnl, "SL", mode))
-                    
+                pnl = (current_price - entry) * pos["size"]
+                if current_price <= sl:
+                    to_close.append((i, pnl, "SL"))
                 elif tp1 > 0 and current_price >= tp1 and not pos.get("tp1_hit"):
-                    logger.info(f"TP1 HIT: Closing 50% at ${current_price:.2f}")
                     pos["tp1_hit"] = True
                     pos["stop_loss"] = entry
-                    
+                    logger.info(f"TP1 HIT - SL moved to breakeven")
                 elif tp2 > 0 and current_price >= tp2 and not pos.get("tp2_hit"):
-                    logger.info(f"TP2 HIT: Closing remaining at ${current_price:.2f}")
-                    positions_to_close.append((i, pnl, "TP2", mode))
-                    
-            elif direction == "SHORT":
-                if sl > 0 and current_price >= sl:
-                    logger.info(f"STOP LOSS: {direction} at ${current_price:.2f}")
-                    positions_to_close.append((i, pnl, "SL", mode))
-                    
+                    to_close.append((i, pnl, "TP2"))
+            else:
+                pnl = (entry - current_price) * pos["size"]
+                if current_price >= sl:
+                    to_close.append((i, pnl, "SL"))
                 elif tp1 > 0 and current_price <= tp1 and not pos.get("tp1_hit"):
-                    logger.info(f"TP1 HIT: Closing 50% at ${current_price:.2f}")
                     pos["tp1_hit"] = True
                     pos["stop_loss"] = entry
-                    
+                    logger.info(f"TP1 HIT - SL moved to breakeven")
                 elif tp2 > 0 and current_price <= tp2 and not pos.get("tp2_hit"):
-                    logger.info(f"TP2 HIT: Closing remaining at ${current_price:.2f}")
-                    positions_to_close.append((i, pnl, "TP2", mode))
-
-        for idx, pnl, reason, mode in reversed(positions_to_close):
+                    to_close.append((i, pnl, "TP2"))
+        
+        for idx, pnl, reason in reversed(to_close):
             if idx < len(self.open_positions):
-                pos = self.open_positions[idx]
-                self.risk_manager.record_trade_close(pnl, reason, idx, mode)
+                pos = self.open_positions.pop(idx)
+                self.balance += pnl
                 
-                # Record for pattern memory
-                self.ai_brain.record_closed_trade(
-                    pnl, reason, pos.get("regime", "unknown"),
-                    pos.get("session", "unknown"), mode,
-                    pos.get("signals_count", 0), pos.get("direction", "")
-                )
+                if pnl > 0:
+                    self.ai_brain.consecutive_losses = 0
+                else:
+                    self.ai_brain.consecutive_losses += 1
                 
                 dashboard.log_trade(
-                    direction=pos.get("direction", ""),
-                    entry_price=pos.get("entry_price", 0),
+                    direction=pos["direction"],
+                    entry_price=pos["entry_price"],
                     exit_price=pnl,
-                    size=pos.get("size", 0),
+                    size=pos["size"],
                     pnl=pnl,
                     status="closed",
                     confidence=0,
-                    regime=pos.get("regime", "unknown"),
+                    regime="",
                     outcome=reason
                 )
-
-    def run(self) -> None:
-        """Main trading loop."""
-        self.is_running = True
+                
+                logger.info(f"Trade closed: {reason} | PnL: ${pnl:.2f}")
+    
+    def run(self):
+        self.ai_brain.reset_daily()
         
         logger.info("=" * 60)
-        logger.info("DELTA EXCHANGE AI TRADING BOT - DUAL MODE")
+        logger.info("DELTA EXCHANGE AI TRADING BOT - SETUP BASED")
         logger.info(f"Starting Capital: ${config.STARTING_CAPITAL}")
         logger.info(f"Mode: {'DRY RUN' if config.DRY_RUN else 'LIVE'}")
-        logger.info(f"Max Trades/Day: {config.MAX_TRADES_DAY}")
-        logger.info(f"Mode 1 (Conviction): {config.MIN_SIGNALS_MODE1}+ signals")
-        logger.info(f"Mode 2 (Risk): {config.MIN_SIGNALS_MODE2}+ signals + price action")
+        logger.info(f"Max Trades/Day: {config.MAX_TRADES_PER_DAY}")
         logger.info("=" * 60)
-
-        while self.is_running:
+        
+        while True:
             try:
                 analysis = self.analyze_market()
                 
-                if analysis and analysis.get("approved"):
+                if analysis and analysis.get("can_trade"):
                     self.execute_trade(analysis)
-
+                
                 market_data = self.client.get_market_data()
                 if market_data:
                     current_price = market_data.get("last_price", 0)
                     if current_price > 0 and self.open_positions:
                         self.monitor_positions(current_price)
-
-                stats = self.risk_manager.get_stats()
-                logger.info(f"Stats: {stats['total_trades']} total, Today: {stats['trades_today']}, WR: {stats['win_rate']:.0f}%")
-
+                
+                logger.info(f"Balance: ${self.balance:.2f} | Trades today: {self.ai_brain.trades_today}")
+            
             except KeyboardInterrupt:
                 logger.info("Stopping bot...")
                 break
             except Exception as e:
-                logger.error(f"Error in main loop: {e}")
+                logger.error(f"Error: {e}")
                 import traceback
                 traceback.print_exc()
-
+            
             time.sleep(config.POLLING_INTERVAL)
-
-    def stop(self):
-        """Stop the trading bot."""
-        self.is_running = False
