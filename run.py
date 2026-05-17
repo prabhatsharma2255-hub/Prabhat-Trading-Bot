@@ -19,14 +19,15 @@ def main():
     api_secret = config.DELTA_API_SECRET
 
     print("=" * 60)
-    print("DELTA EXCHANGE AI TRADING BOT - 24/7 AUTOMATED")
+    print("DELTA EXCHANGE AI TRADING BOT - DUAL MODE")
     print("=" * 60)
     print(f"Mode: {'DRY RUN' if config.DRY_RUN else 'LIVE TRADING'}")
     print(f"Symbol: {config.SYMBOL}")
     print(f"Starting Capital: ${config.STARTING_CAPITAL}")
-    print(f"Max Risk/Trade: {config.RISK_GRADE_A*100}% (Grade A)")
+    print(f"Mode 1 Risk: {config.RISK_MODE1_GRADE_A*100}% (Conviction)")
+    print(f"Mode 2 Risk: {config.RISK_MODE2_DEFAULT*100}% (Calculated)")
+    print(f"Max Trades/Day: {config.MAX_TRADES_DAY}")
     print(f"Polling Interval: {config.POLLING_INTERVAL}s")
-    print(f"Max Trades/Day: {config.MAX_TRADES_PER_DAY}")
     print("=" * 60)
     print()
     sys.stdout.flush()
