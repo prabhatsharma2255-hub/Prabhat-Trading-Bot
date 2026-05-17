@@ -32,12 +32,41 @@ app = Flask(__name__)
 DB_FILE = "trades.db"
 
 
+def get_current_price():
+    """Get current BTC price from Delta API."""
+    try:
+        import requests
+        r = requests.get("https://api.india.delta.exchange/v2/tickers/BTCUSD", timeout=5)
+        data = r.json()
+        if data and "result" in data:
+            return float(data["result"].get("close", 0))
+    except:
+        pass
+    return 0
+
+
 def get_trades(limit=20):
+    current_price = get_current_price()
+    
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,))
     cols = [desc[0] for desc in c.description]
-    trades = [dict(zip(cols, row)) for row in c.fetchall()]
+    trades = []
+    for row in c.fetchall():
+        trade = dict(zip(cols, row))
+        
+        if trade["status"] == "open" and current_price > 0:
+            if trade["direction"] == "LONG":
+                trade["current_pnl"] = (current_price - trade["entry_price"]) * trade["size"]
+            else:
+                trade["current_pnl"] = (trade["entry_price"] - current_price) * trade["size"]
+            trade["current_price"] = current_price
+        else:
+            trade["current_pnl"] = 0
+            trade["current_price"] = 0
+            
+        trades.append(trade)
     conn.close()
     return trades
 
@@ -126,7 +155,9 @@ HTML_TEMPLATE = """
         <tr>
             <th>Direction</th>
             <th>Entry Price</th>
+            <th>Current Price</th>
             <th>Size</th>
+            <th>PnL</th>
             <th>Regime</th>
             <th>Grade</th>
             <th>Time</th>
@@ -135,13 +166,15 @@ HTML_TEMPLATE = """
         <tr>
             <td class="{{ 'positive' if trade.direction == 'LONG' else 'negative' }}">{{ trade.direction }}</td>
             <td>${{ "%.2f"|format(trade.entry_price) }}</td>
+            <td>${{ "%.2f"|format(trade.current_price) }}</td>
             <td>{{ "%.4f"|format(trade.size) }}</td>
+            <td class="{{ 'positive' if trade.current_pnl > 0 else 'negative' }}">${{ "%.2f"|format(trade.current_pnl) }}</td>
             <td>{{ trade.regime }}</td>
             <td>{{ trade.grade }}</td>
             <td>{{ trade.timestamp_entry[:19] if trade.timestamp_entry else 'N/A' }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="6">No open positions</td></tr>
+        <tr><td colspan="8">No open positions</td></tr>
         {% endfor %}
     </table>
     
