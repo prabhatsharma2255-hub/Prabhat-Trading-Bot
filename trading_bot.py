@@ -349,12 +349,16 @@ class TradingBot:
     def monitor_positions(self, current_price: float):
         to_close = []
         
+        logger.info(f"MONITOR: Price=${current_price}, Open positions={len(self.open_positions)}")
+        
         for i, pos in enumerate(self.open_positions):
             entry = pos["entry_price"]
             direction = pos["direction"]
             sl = pos["stop_loss"]
             tp1 = pos["take_profit_1"]
             tp2 = pos["take_profit_2"]
+            
+            logger.info(f"  Pos {i}: {direction} Entry=${entry} SL={sl} TP1={tp1} TP2={tp2}")
             
             pnl = 0
             if direction == "LONG":
