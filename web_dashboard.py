@@ -14,11 +14,18 @@ Then access http://localhost:5000
 
 from flask import Flask, render_template_string, jsonify
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import threading
 import time
 import os
 import sys
+
+
+def get_indian_time():
+    """Get current time in Indian Standard Time (UTC+5:30)"""
+    ist_offset = timedelta(hours=5, minutes=30)
+    ist_time = datetime.now(timezone.utc) + ist_offset
+    return ist_time.strftime("%Y-%m-%d %H:%M:%S IST")
 
 app = Flask(__name__)
 
@@ -174,7 +181,7 @@ HTML_TEMPLATE = """
 def index():
     stats = get_stats()
     trades = get_trades()
-    return render_template_string(HTML_TEMPLATE, stats=stats, trades=trades, last_update=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    return render_template_string(HTML_TEMPLATE, stats=stats, trades=trades, last_update=get_indian_time())
 
 
 @app.route('/api/stats')
