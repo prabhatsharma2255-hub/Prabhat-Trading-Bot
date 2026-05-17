@@ -135,4 +135,4 @@ ENABLE_LOGGING = True
 LOG_FILE = "trading_bot.log"
 
 # MODE - SET TO TRUE FOR DRY RUN, FALSE FOR LIVE
-DRY_RUN = True
+DRY_RUN = False
