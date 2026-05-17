@@ -228,6 +228,12 @@ class TradingBot:
             return False
         
         setup = analysis["setup"]
+        
+        for pos in self.open_positions:
+            if pos.get("setup") == setup.setup_name:
+                logger.warning(f"Setup {setup.setup_name} already open - blocking")
+                return False
+        
         state = analysis["state"]
         state = analysis["state"]
         
