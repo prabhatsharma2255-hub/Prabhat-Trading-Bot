@@ -127,7 +127,7 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
     elif status == "closed":
         c.execute('''UPDATE trades SET 
             timestamp_exit = ?, exit_price = ?, pnl_usd = ?, status = ?, outcome = ?
-            WHERE timestamp_entry = (SELECT timestamp_entry FROM trades WHERE 
+            WHERE id = (SELECT id FROM trades WHERE 
             direction = ? AND entry_price = ? AND status = 'open' ORDER BY id DESC LIMIT 1)''',
             (timestamp, exit_price, pnl, status, outcome, direction, entry_price))
     
