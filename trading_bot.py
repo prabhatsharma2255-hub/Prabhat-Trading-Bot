@@ -356,7 +356,7 @@ class TradingBot:
                 dashboard.log_trade(
                     direction=pos["direction"],
                     entry_price=pos["entry_price"],
-                    exit_price=pnl,
+                    exit_price=current_price,
                     size=pos["size"],
                     pnl=pnl,
                     status="closed",
@@ -365,7 +365,7 @@ class TradingBot:
                     outcome=reason
                 )
                 
-                logger.info(f"Trade closed: {reason} | PnL: ${pnl:.2f}")
+                logger.info(f"Trade closed: {reason} | PnL: ${pnl:.2f} | Exit: ${current_price}")
     
     def run(self):
         self.ai_brain.reset_daily()
