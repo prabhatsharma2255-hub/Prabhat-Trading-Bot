@@ -56,14 +56,20 @@ def get_trades(limit=20):
     for row in c.fetchall():
         trade = dict(zip(cols, row))
         
-        if trade["status"] == "open" and current_price > 0:
-            leverage = trade.get("leverage", 1)
-            if trade["direction"] == "LONG":
-                trade["current_pnl"] = (current_price - trade["entry_price"]) * trade["size"] * leverage
+        try:
+            if trade.get("status") == "open" and current_price > 0:
+                leverage = float(trade.get("leverage", 1) or 1)
+                entry = float(trade.get("entry_price", 0))
+                size = float(trade.get("size", 0))
+                if trade.get("direction") == "LONG":
+                    trade["current_pnl"] = (current_price - entry) * size * leverage
+                else:
+                    trade["current_pnl"] = (entry - current_price) * size * leverage
+                trade["current_price"] = current_price
             else:
-                trade["current_pnl"] = (trade["entry_price"] - current_price) * trade["size"] * leverage
-            trade["current_price"] = current_price
-        else:
+                trade["current_pnl"] = 0
+                trade["current_price"] = 0
+        except:
             trade["current_pnl"] = 0
             trade["current_price"] = 0
             

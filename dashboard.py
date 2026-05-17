@@ -113,6 +113,11 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN leverage REAL DEFAULT 1")
+    except:
+        pass
+    
     timestamp = datetime.now().isoformat()
     date_str = date.today().isoformat()
     
