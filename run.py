@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+"""
+run.py - 24/7 Continuous Trading Bot
+
+Production-grade 24/7 trading loop with error recovery and logging.
+"""
+
 import os
 import sys
 
@@ -16,9 +23,10 @@ def main():
     print("=" * 60)
     print(f"Mode: {'DRY RUN' if config.DRY_RUN else 'LIVE TRADING'}")
     print(f"Symbol: {config.SYMBOL}")
-    print(f"Capital: ${config.CAPITAL}")
-    print(f"Max Risk/Trade: ${config.MAX_RISK_AMOUNT}")
-    print(f"Polling Interval: {config.POLLING_INTERVAL} seconds")
+    print(f"Starting Capital: ${config.STARTING_CAPITAL}")
+    print(f"Max Risk/Trade: {config.RISK_GRADE_A*100}% (Grade A)")
+    print(f"Polling Interval: {config.POLLING_INTERVAL}s")
+    print(f"Max Trades/Day: {config.MAX_TRADES_PER_DAY}")
     print("=" * 60)
     print()
     sys.stdout.flush()
@@ -31,7 +39,16 @@ def main():
         sys.stdout.flush()
 
     bot = TradingBot(api_key, api_secret)
-    bot.run()
+    
+    try:
+        bot.run()
+    except KeyboardInterrupt:
+        print("\nBot stopped by user")
+    except Exception as e:
+        print(f"\nBot crashed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
