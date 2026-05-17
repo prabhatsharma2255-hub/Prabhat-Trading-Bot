@@ -20,6 +20,7 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
+    # Create tables if not exist
     c.execute('''CREATE TABLE IF NOT EXISTS trades (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp_entry TEXT,
@@ -77,6 +78,27 @@ def init_db():
         direction TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )''')
+    
+    # Add missing columns if they don't exist (migration)
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN mode INTEGER DEFAULT 1")
+    except:
+        pass
+    
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN session TEXT")
+    except:
+        pass
+    
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN htf_aligned INTEGER DEFAULT 0")
+    except:
+        pass
+    
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN status TEXT DEFAULT 'closed'")
+    except:
+        pass
     
     conn.commit()
     conn.close()
