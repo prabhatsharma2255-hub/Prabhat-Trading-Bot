@@ -57,10 +57,11 @@ def get_trades(limit=20):
         trade = dict(zip(cols, row))
         
         if trade["status"] == "open" and current_price > 0:
+            leverage = trade.get("leverage", 1)
             if trade["direction"] == "LONG":
-                trade["current_pnl"] = (current_price - trade["entry_price"]) * trade["size"]
+                trade["current_pnl"] = (current_price - trade["entry_price"]) * trade["size"] * leverage
             else:
-                trade["current_pnl"] = (trade["entry_price"] - current_price) * trade["size"]
+                trade["current_pnl"] = (trade["entry_price"] - current_price) * trade["size"] * leverage
             trade["current_price"] = current_price
         else:
             trade["current_pnl"] = 0

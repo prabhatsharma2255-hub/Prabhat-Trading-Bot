@@ -108,7 +108,7 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
               size: float, pnl: float, status: str, confidence: float,
               regime: str, signals: str = "", htf_aligned: bool = False,
               session: str = "", grade: str = "", module: str = "",
-              outcome: str = ""):
+              outcome: str = "", leverage: int = 1):
     """Log a trade to database."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -119,10 +119,10 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
     if status == "open":
         c.execute('''INSERT INTO trades 
             (timestamp_entry, symbol, direction, regime, grade, module_used, 
-             entry_price, size, pnl_usd, status, signals_fired, htf_aligned, session)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+             entry_price, size, pnl_usd, status, signals_fired, htf_aligned, session, leverage)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             (timestamp, "BTCUSD", direction, regime, grade, module,
-             entry_price, size, pnl, status, signals, 1 if htf_aligned else 0, session))
+             entry_price, size, pnl, status, signals, 1 if htf_aligned else 0, session, leverage))
     
     elif status == "closed":
         c.execute('''UPDATE trades SET 

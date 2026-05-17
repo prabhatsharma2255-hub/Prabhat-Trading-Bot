@@ -337,7 +337,8 @@ class TradingBot:
                 htf_aligned=state.htf_bullish,
                 session=analysis["session"],
                 grade=setup.setup_name,
-                module=setup.setup_name
+                module=setup.setup_name,
+                leverage=setup.leverage
             )
             
             logger.info("Trade executed successfully")
@@ -360,9 +361,10 @@ class TradingBot:
             
             logger.info(f"  Pos {i}: {direction} Entry=${entry} SL={sl} TP1={tp1} TP2={tp2}")
             
+            leverage = pos.get("leverage", 1)
             pnl = 0
             if direction == "LONG":
-                pnl = (current_price - entry) * pos["size"]
+                pnl = (current_price - entry) * pos["size"] * leverage
                 if current_price <= sl:
                     to_close.append((i, pnl, "SL"))
                 elif tp1 > 0 and current_price >= tp1 and not pos.get("tp1_hit"):
@@ -372,7 +374,7 @@ class TradingBot:
                 elif tp2 > 0 and current_price >= tp2 and not pos.get("tp2_hit"):
                     to_close.append((i, pnl, "TP2"))
             else:
-                pnl = (entry - current_price) * pos["size"]
+                pnl = (entry - current_price) * pos["size"] * leverage
                 if current_price >= sl:
                     to_close.append((i, pnl, "SL"))
                 elif tp1 > 0 and current_price <= tp1 and not pos.get("tp1_hit"):
