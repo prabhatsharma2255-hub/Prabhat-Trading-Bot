@@ -233,6 +233,9 @@ class TradingBot:
             if pos.get("setup") == setup.setup_name:
                 logger.warning(f"Setup {setup.setup_name} already open")
                 return False
+            if pos.get("direction") == direction:
+                logger.warning(f"Direction {direction} already open")
+                return False
         
         state = analysis["state"]
         state = analysis["state"]
