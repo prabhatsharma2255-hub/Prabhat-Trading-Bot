@@ -50,6 +50,11 @@ def get_trades(limit=20):
     
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    try:
+        c.execute("DELETE FROM trades WHERE pnl_usd < -100")
+    except:
+        pass
+    c = conn.cursor()
     c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,))
     cols = [desc[0] for desc in c.description]
     trades = []
