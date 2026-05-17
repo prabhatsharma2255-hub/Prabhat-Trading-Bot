@@ -48,7 +48,6 @@ class DeltaClient:
             if data and "result" in data:
                 products = data["result"]
                 
-                # Find BTC USD perpetual - description contains "Perpetual" and "USD"
                 btc_usd_perpetual = [
                     p for p in products
                     if p.get("symbol", "").upper() == "BTCUSD"
@@ -58,8 +57,7 @@ class DeltaClient:
                     self._symbol_cache = "BTCUSD"
                     logger.info(f"Found BTCUSD perpetual: {self._symbol_cache}")
                     return
-                
-                # Fallback: find any BTC with USD in description
+                    
                 btc_usd = [
                     p for p in products
                     if p.get("symbol", "").upper().startswith("BTC")
@@ -196,13 +194,9 @@ class DeltaClient:
         return None
 
     def get_candles(self, symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
-        """
-        Fetch OHLCV candles from the API.
-        
-        IMPORTANT: Delta API returns newest-first, we reverse to chronological.
-        """
+        """Fetch OHLCV candles from the API."""
         end_time = int(time.time())
-        start_time = end_time - (60 * 60 * 24 * 7)  # 7 days of data max
+        start_time = end_time - (60 * 60 * 24 * 7)
 
         resolution_map = {
             "1m": "1m", "3m": "3m", "5m": "5m", 
@@ -237,7 +231,7 @@ class DeltaClient:
                 candles = data.get("result", [])
                 
                 if candles:
-                    candles.reverse()  # Convert to chronological (oldest first)
+                    candles.reverse()
                     self._candle_cache[cache_key] = candles
                     self._last_candle_time = candles[-1].get("time", 0)
                     logger.info(f"Retrieved {len(candles)} candles for {symbol} {timeframe}")
@@ -278,7 +272,7 @@ class DeltaClient:
         data = self._request("GET", f"/v2/orders?product_id={symbol}&state=open")
         return data.get("result", []) if data else []
 
-def place_order(self, order_type: str, side: str, size: float,
+    def place_order(self, order_type: str, side: str, size: float,
                     price: Optional[float] = None,
                     stop_loss: Optional[float] = None,
                     take_profit: Optional[float] = None,
@@ -308,7 +302,7 @@ def place_order(self, order_type: str, side: str, size: float,
         
         logger.error(f"Order placement failed: {result}")
         return None
-
+    
     def close_position(self, direction: str, size: float) -> Optional[Dict]:
         """Close an open position by placing opposite order."""
         close_side = "sell" if direction == "LONG" else "buy"
