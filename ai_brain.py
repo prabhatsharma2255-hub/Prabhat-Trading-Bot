@@ -141,16 +141,20 @@ class AIBrain:
         return True, "OK"
     
     def check_htf_alignment(self, htf_bullish: bool, direction: str) -> Tuple[bool, str]:
-        """Check HTF alignment - 2 of 3 needed"""
+        """Check HTF alignment - weighted confidence, block only conflicting"""
         if not direction or direction == "NONE":
             return False, "no_direction"
         
         if htf_bullish and direction == "LONG":
-            return True, "aligned_bull"
+            return True, "htf_bull_strong"
         elif not htf_bullish and direction == "SHORT":
-            return True, "aligned_bear"
+            return True, "htf_bear_strong"
+        elif htf_bullish and direction == "SHORT":
+            return False, "htf_conflict"
+        elif not htf_bullish and direction == "LONG":
+            return False, "htf_conflict"
         
-        return False, "conflicting"
+        return True, "htf_neutral"
     
     def scan_setups(self, state: MarketState, velocity_data: Dict = None, 
                  news_engine=None, move_detector=None, ltf_candles: List = None) -> List[SetupResult]:
@@ -162,16 +166,16 @@ class AIBrain:
             funding_data = move_detector.get_market_intelligence()
         
         # HIGH CONVICTION SWING (1-6)
-        result = self._setup_squeeze_breakout(state)
+        result = self._setup_squeeze_breakout(state, ltf_candles)
         results.append(result)
         
-        result = self._setup_liquidity_sweep(state)
+        result = self._setup_liquidity_sweep(state, ltf_candles)
         results.append(result)
         
         result = self._setup_break_retest(state)
         results.append(result)
         
-        result = self._setup_trend_pullback(state)
+        result = self._setup_trend_pullback(state, ltf_candles)
         results.append(result)
         
         result = self._setup_fibonacci(state)
@@ -400,23 +404,40 @@ class AIBrain:
             return SetupResult(False, "ROCKET_RIDE", "NONE", 0, 0, 0, 0, 0, conditions, "rocket_suspended_3losses")
         
         vel_3m = velocity_data.get("velocity_3m", 0)
+        vel_1m = velocity_data.get("velocity_1m", 0)
         
-        # CONDITION 1: Velocity > 1.0%
-        if abs(vel_3m) > 0.01:
-            conditions.append(f"velocity_{vel_3m*100:.1f}%")
+        # CONDITION 1: Velocity > 0.5% WITH momentum persistence OR candle expansion
+        if abs(vel_3m) > 0.005:
+            momentum_persistent = abs(vel_1m) > 0.003
+            
+            candle_expansion = False
+            if candles and len(candles) >= 3:
+                recent = candles[-3:]
+                ranges = [(c.get("high", 0) - c.get("low", 0)) / c.get("close", 1) for c in recent]
+                avg_range = sum(ranges) / len(ranges) if ranges else 0
+                current_range = ranges[-1] if ranges else 0
+                candle_expansion = current_range > avg_range * 1.2
+            
+            if momentum_persistent or candle_expansion:
+                conditions.append(f"velocity_{vel_3m*100:.1f}%")
+            else:
+                conditions.append(f"velocity_weak")
         else:
-            return SetupResult(False, "ROCKET_RIDE", "NONE", 0, 0, 0, 0, 0, conditions, "velocity_below_1pct")
+            return SetupResult(False, "ROCKET_RIDE", "NONE", 0, 0, 0, 0, 0, conditions, "velocity_below_0.5pct")
         
-        # CONDITION 2: Volume burst with high quality
+        # CONDITION 2: Adaptive volume - reject dead, allow medium+
         volume_burst = getattr(state, 'volume_burst', False)
         burst_quality = getattr(state, 'burst_quality', 'none')
         
-        if volume_burst and burst_quality == "high":
-            conditions.append("volume_burst_high_quality")
-        elif state.rvol > 2.0:
-            conditions.append("volume_confirmed")
+        if state.rvol < 0.5:
+            return SetupResult(False, "ROCKET_RIDE", "NONE", 0, 0, 0, 0, 0, conditions, "dead_volume")
+        
+        if volume_burst and burst_quality in ["high", "medium"]:
+            conditions.append("volume_burst_quality")
+        elif state.rvol > 1.0:
+            conditions.append("volume_active")
         else:
-            return SetupResult(False, "ROCKET_RIDE", "NONE", 0, 0, 0, 0, 0, conditions, "no_volume_burst")
+            conditions.append("volume_weak")
         
         # CONDITION 3: RSI not exhausted
         rsi_val = state.rsi
@@ -660,7 +681,7 @@ class AIBrain:
             config.SETUP_FUNDING_SQUEEZE_RISK, config.SETUP_FUNDING_SQUEEZE_LEV,
             sl, tp1, tp2, conditions, "funding_squeeze")
     
-    def _setup_squeeze_breakout(self, state: MarketState) -> SetupResult:
+    def _setup_squeeze_breakout(self, state: MarketState, candles: List = None) -> SetupResult:
         """SQUEEZE BREAKOUT - Highest leverage setup"""
         conditions = []
         
@@ -676,7 +697,23 @@ class AIBrain:
         if state.rsi_divergence == "hidden_bull":
             conditions.append("bullish_div")
         
-        all_met = state.squeeze_fired and state.rvol > 1.8 and state.squeeze_momentum != "none"
+        squeeze_quality = False
+        
+        vol_expansion = state.rvol > 1.2
+        
+        candle_body_strong = False
+        if candles and len(candles) >= 1:
+            last = candles[-1]
+            body = abs(last.get("close", 0) - last.get("open", 0))
+            range_size = last.get("high", 0) - last.get("low", 0)
+            if range_size > 0 and (body / range_size) > 0.6:
+                candle_body_strong = True
+        
+        momentum_accel = state.squeeze_momentum != "none" or state.rsi_divergence != "none"
+        
+        squeeze_quality = vol_expansion or candle_body_strong or (momentum_accel and state.rvol > 0.8)
+        
+        all_met = (state.squeeze_fired or state.squeeze_on) and squeeze_quality
         
         if all_met and self.squeeze_trades_today < 1:
             direction = "LONG" if state.squeeze_momentum == "bull" else "SHORT"
@@ -719,7 +756,7 @@ class AIBrain:
             reason="conditions_not_met" if conditions else "no_squeeze"
         )
     
-    def _setup_liquidity_sweep(self, state: MarketState) -> SetupResult:
+    def _setup_liquidity_sweep(self, state: MarketState, candles: List = None) -> SetupResult:
         """LIQUIDITY SWEEP REVERSAL"""
         conditions = []
         
@@ -746,9 +783,35 @@ class AIBrain:
         if state.pattern_at_level:
             conditions.append("at_level")
         
-        all_met = (state.liq_sweep_bull or state.liq_sweep_bear) and \
-                  state.pattern in ["pin_bull", "pin_bear", "bull_engulf", "bear_engulf"] and \
-                  state.pattern_at_level
+        liq_confirm = False
+        
+        if state.liq_sweep_bull:
+            if state.pattern in ["pin_bull", "bull_engulf"]:
+                liq_confirm = True
+            elif state.rsi_divergence == "bull_div" and state.rsi < 60:
+                liq_confirm = True
+            elif state.macd_state == "accel_bull":
+                liq_confirm = True
+        elif state.liq_sweep_bear:
+            if state.pattern in ["pin_bear", "bear_engulf"]:
+                liq_confirm = True
+            elif state.rsi_divergence == "bear_div" and state.rsi > 40:
+                liq_confirm = True
+            elif state.macd_state == "accel_bear":
+                liq_confirm = True
+        
+        if candles and len(candles) >= 2:
+            last_candle = candles[-1]
+            prev_candle = candles[-2]
+            
+            if state.liq_sweep_bull:
+                if last_candle.get("close", 0) > prev_candle.get("close", 0):
+                    liq_confirm = True
+            elif state.liq_sweep_bear:
+                if last_candle.get("close", 0) < prev_candle.get("close", 0):
+                    liq_confirm = True
+        
+        all_met = (state.liq_sweep_bull or state.liq_sweep_bear) and liq_confirm
         
         if all_met:
             direction = "LONG" if state.liq_sweep_bull else "SHORT"
@@ -848,7 +911,7 @@ class AIBrain:
             reason="no_recent_BOS"
         )
     
-    def _setup_trend_pullback(self, state: MarketState) -> SetupResult:
+    def _setup_trend_pullback(self, state: MarketState, candles: List = None) -> SetupResult:
         """TREND CONTINUATION PULLBACK"""
         conditions = []
         
@@ -870,9 +933,30 @@ class AIBrain:
         if state.htf_bullish and state.structure == "bullish":
             conditions.append("htf_aligned")
         
-        all_met = state.structure != "ranging" and \
-                  (state.at_fib and 0.382 <= state.which_fib <= 0.618) and \
-                  state.macd_state in ["accel_bull", "accel_bear", "decel_bull", "decel_bear"]
+        pullback_quality = False
+        
+        rsi_reset = 40 < state.rsi < 60
+        macd_reexpansion = state.macd_state in ["accel_bull", "accel_bear"]
+        
+        rejection_candle = False
+        if candles and len(candles) >= 1:
+            last = candles[-1]
+            body = abs(last.get("close", 0) - last.get("open", 0))
+            range_size = last.get("high", 0) - last.get("low", 0)
+            upper_wick = last.get("high", 0) - max(last.get("close", 0), last.get("open", 0))
+            lower_wick = min(last.get("close", 0), last.get("open", 0)) - last.get("low", 0)
+            
+            if range_size > 0:
+                if state.structure == "bullish" and lower_wick > body * 0.5:
+                    rejection_candle = True
+                elif state.structure == "bearish" and upper_wick > body * 0.5:
+                    rejection_candle = True
+        
+        trend_continuation = state.macd_state in ["accel_bull", "accel_bear", "decel_bull", "decel_bear"]
+        
+        pullback_quality = rsi_reset or macd_reexpansion or rejection_candle or trend_continuation
+        
+        all_met = state.structure != "ranging" and pullback_quality
         
         if all_met:
             direction = "LONG" if state.structure == "bullish" else "SHORT"
