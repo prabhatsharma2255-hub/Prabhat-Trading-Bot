@@ -313,6 +313,16 @@ class DeltaClient:
         logger.error(f"Order placement failed: {result}")
         return None
 
+    def close_position(self, direction: str, size: float) -> Optional[Dict]:
+        """Close an open position by placing opposite order."""
+        close_side = "sell" if direction == "LONG" else "buy"
+        
+        if config.DRY_RUN:
+            logger.info(f"[DRY RUN] Would close: {close_side} {size}")
+            return {"order_id": "dry_run_close", "dry_run": True}
+        
+        return self.place_order("market", close_side, size, None, None, None, 1)
+    
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an order."""
         if config.DRY_RUN:

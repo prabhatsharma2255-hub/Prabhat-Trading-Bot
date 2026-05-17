@@ -346,6 +346,9 @@ class TradingBot:
         for idx, pnl, reason in reversed(to_close):
             if idx < len(self.open_positions):
                 pos = self.open_positions.pop(idx)
+                
+                close_result = self.client.close_position(pos["direction"], pos["size"])
+                
                 self.balance += pnl
                 
                 if pnl > 0:
