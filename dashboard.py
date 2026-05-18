@@ -108,13 +108,21 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
               size: float, pnl: float, status: str, confidence: float,
               regime: str, signals: str = "", htf_aligned: bool = False,
               session: str = "", grade: str = "", module: str = "",
-              outcome: str = "", leverage: int = 1):
+              outcome: str = "", leverage: int = 1, stop_loss: float = 0, take_profit: float = 0):
     """Log a trade to database."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
     try:
         c.execute("ALTER TABLE trades ADD COLUMN leverage REAL DEFAULT 1")
+    except:
+        pass
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN stop_loss REAL DEFAULT 0")
+    except:
+        pass
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN take_profit REAL DEFAULT 0")
     except:
         pass
     
@@ -124,10 +132,10 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
     if status == "open":
         c.execute('''INSERT INTO trades 
             (timestamp_entry, symbol, direction, regime, grade, module_used, 
-             entry_price, size, pnl_usd, status, signals_fired, htf_aligned, session, leverage)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+             entry_price, size, pnl_usd, status, signals_fired, htf_aligned, session, leverage, stop_loss, take_profit)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             (timestamp, "BTCUSD", direction, regime, grade, module,
-             entry_price, size, pnl, status, signals, 1 if htf_aligned else 0, session, leverage))
+             entry_price, size, pnl, status, signals, 1 if htf_aligned else 0, session, leverage, stop_loss, take_profit))
     
     elif status == "closed":
         c.execute('''UPDATE trades SET 

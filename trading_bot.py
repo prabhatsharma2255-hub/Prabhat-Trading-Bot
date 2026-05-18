@@ -338,7 +338,9 @@ class TradingBot:
                 session=analysis["session"],
                 grade=setup.setup_name,
                 module=setup.setup_name,
-                leverage=setup.leverage
+                leverage=setup.leverage,
+                stop_loss=setup.stop_loss,
+                take_profit=setup.tp2
             )
             
             logger.info("Trade executed successfully")
