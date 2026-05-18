@@ -1,0 +1,35 @@
+{
+  "open": [],
+  "closed": [
+    {
+      "id": "1",
+      "symbol": "BTCUSD",
+      "side": "sell",
+      "entry_price": 76994.5,
+      "tp": 76194.64,
+      "sl": 77785.15,
+      "size": 0.00885347498893322,
+      "open_time": "2026-05-18T10:16:37.580435",
+      "close_time": "2026-05-18T12:12:35.031264",
+      "close_price": 76765.0,
+      "pnl": 2.03,
+      "status": "closed",
+      "close_reason": "manual"
+    },
+    {
+      "id": "22",
+      "symbol": "BTCUSD",
+      "side": "sell",
+      "entry_price": 78364.0,
+      "tp": 0,
+      "sl": 0,
+      "size": 0.0975,
+      "open_time": "2026-05-18T08:00:00",
+      "close_time": "2026-05-18T10:00:00",
+      "close_price": 78300.0,
+      "pnl": -1.5,
+      "status": "closed",
+      "close_reason": "sl"
+    }
+  ]
+}

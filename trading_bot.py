@@ -17,6 +17,11 @@ from ai_brain import AIBrain
 import dashboard
 
 try:
+    from trade_manager import TradeManager
+except:
+    TradeManager = None
+
+try:
     from news_engine import NewsEngine
 except ImportError:
     NewsEngine = None
@@ -375,6 +380,7 @@ class TradingBot:
             
             self.open_positions.append(position)
             
+            # Log to both dashboard (SQLite) and trade_manager (JSON)
             dashboard.log_trade(
                 direction=direction,
                 entry_price=price,
@@ -393,6 +399,24 @@ class TradingBot:
                 stop_loss=setup.stop_loss,
                 take_profit=setup.tp2
             )
+            
+            # Also save to JSON for dashboard sync
+            if TradeManager:
+                try:
+                    tm = TradeManager()
+                    side = "buy" if direction == "LONG" else "sell"
+                    tm.open_trade(
+                        trade_id=str(len(self.open_positions)),
+                        symbol=config.SYMBOL,
+                        side=side,
+                        entry_price=price,
+                        tp=setup.tp2,
+                        sl=setup.stop_loss,
+                        size=position_size,
+                        open_time=datetime.now().isoformat()
+                    )
+                except Exception as e:
+                    logger.warning(f"TradeManager save failed: {e}")
             
             logger.info("Trade executed successfully")
             return True
@@ -483,6 +507,21 @@ class TradingBot:
                     stop_loss=pos.get("stop_loss", 0),
                     take_profit=pos.get("take_profit_2", 0)
                 )
+                
+                # Also save to JSON
+                if TradeManager:
+                    try:
+                        tm = TradeManager()
+                        side = "buy" if pos["direction"] == "LONG" else "sell"
+                        tm.close_trade(
+                            trade_id=str(pos.get("id", idx+1)),
+                            close_price=current_price,
+                            close_time=datetime.now().isoformat(),
+                            close_reason=reason,
+                            pnl=pnl
+                        )
+                    except Exception as e:
+                        logger.warning(f"TradeManager close failed: {e}")
                 
                 logger.info(f"Trade closed: {reason} | PnL: ${pnl:.2f} | Exit: ${current_price}")
     

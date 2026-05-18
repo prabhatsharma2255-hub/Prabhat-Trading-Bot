@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Web Dashboard - Simple and working"""
+"""Web Dashboard - Reads from trades.json"""
 
 from flask import Flask, render_template_string, request, redirect
-import sqlite3
-from datetime import datetime, timezone, timedelta
 import requests
 import os
 import sys
+from datetime import datetime, timezone, timedelta
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    from trade_manager import TradeManager
+except:
+    TradeManager = None
 
 try:
     import config
@@ -22,8 +27,7 @@ def get_indian_time():
     return ist_time.strftime("%Y-%m-%d %H:%M:%S IST")
 
 app = Flask(__name__)
-DB_FILE = "trades.db"
-
+TRADES_FILE = "trades.json"
 
 def get_current_price():
     try:
@@ -35,200 +39,193 @@ def get_current_price():
         pass
     return 0
 
+def get_trade_manager():
+    if TradeManager is None:
+        return None
+    return TradeManager(TRADES_FILE)
 
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS trades (
-        id INTEGER PRIMARY KEY, timestamp_entry TEXT, timestamp_exit TEXT,
-        symbol TEXT, direction TEXT, regime TEXT, grade TEXT, entry_price REAL,
-        exit_price REAL, size REAL, leverage REAL, stop_loss REAL, take_profit REAL,
-        pnl_usd REAL, status TEXT, signals_fired TEXT, htf_aligned INTEGER,
-        session TEXT, outcome TEXT
-    )''')
-    conn.commit()
-    conn.close()
-
-init_db()
-
-
-def get_trades(limit=50):
+def get_trades():
+    tm = get_trade_manager()
+    if tm is None:
+        return []
+    
     current_price = get_current_price()
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    
-    # Add missing columns
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN status TEXT DEFAULT 'closed'")
-    except:
-        pass
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN leverage REAL DEFAULT 1")
-    except:
-        pass
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN stop_loss REAL DEFAULT 0")
-    except:
-        pass
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN take_profit REAL DEFAULT 0")
-    except:
-        pass
-    
-    c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,))
-    cols = [desc[0] for desc in c.description]
     trades = []
-    for row in c.fetchall():
-        trade = dict(zip(cols, row))
+    
+    for trade in tm.get_all_trades():
+        t = {
+            "id": trade.get("id"),
+            "direction": "LONG" if trade.get("side") == "buy" else "SHORT",
+            "entry_price": trade.get("entry_price", 0),
+            "exit_price": trade.get("close_price") or 0,
+            "size": trade.get("size", 0),
+            "leverage": 1,
+            "stop_loss": trade.get("sl", 0),
+            "take_profit": trade.get("tp", 0),
+            "pnl_usd": trade.get("pnl") or 0,
+            "status": trade.get("status", "closed"),
+            "signals_fired": trade.get("symbol", ""),
+            "timestamp_entry": trade.get("open_time", ""),
+            "timestamp_exit": trade.get("close_time", ""),
+            "outcome": trade.get("close_reason", "")
+        }
         
-        try:
-            trade["entry_price"] = float(trade.get("entry_price") or 0)
-            trade["exit_price"] = float(trade.get("exit_price") or 0)
-            trade["size"] = float(trade.get("size") or 0)
-            trade["leverage"] = float(trade.get("leverage") or 1)
-            trade["stop_loss"] = float(trade.get("stop_loss") or 0)
-            trade["take_profit"] = float(trade.get("take_profit") or 0)
-            trade["pnl_usd"] = float(trade.get("pnl_usd") or 0)
-            trade["status"] = trade.get("status") or "closed"
-            
-            if trade["status"] == "open" and current_price > 0:
-                leverage = trade["leverage"]
-                entry = trade["entry_price"]
-                size = trade["size"]
-                if trade.get("direction") == "LONG":
-                    trade["current_pnl"] = (current_price - entry) * size * leverage
-                else:
-                    trade["current_pnl"] = (entry - current_price) * size * leverage
-                trade["current_price"] = current_price
-                trade["notional"] = entry * size * leverage
+        if t["status"] == "open" and current_price > 0:
+            entry = t["entry_price"]
+            size = t["size"]
+            lev = t["leverage"]
+            if t["direction"] == "LONG":
+                t["current_pnl"] = (current_price - entry) * size * lev
             else:
-                trade["current_pnl"] = trade["pnl_usd"]
-                trade["current_price"] = trade.get("exit_price") or 0
-                trade["notional"] = trade["entry_price"] * trade["size"] * trade["leverage"]
-        except Exception as e:
-            trade["current_pnl"] = 0
-            trade["current_price"] = 0
-            trade["notional"] = 0
-            trade["status"] = "closed"
-        trades.append(trade)
-    conn.close()
+                t["current_pnl"] = (entry - current_price) * size * lev
+            t["current_price"] = current_price
+        else:
+            t["current_pnl"] = t["pnl_usd"]
+            t["current_price"] = t["exit_price"]
+        
+        trades.append(t)
+    
     return trades
 
+def get_closed_trades():
+    tm = get_trade_manager()
+    if tm is None:
+        return {"today": [], "yesterday": [], "history": []}
+    
+    closed = tm.get_closed_trades()
+    
+    today = datetime.now().date()
+    yesterday = today - timedelta(days=1)
+    
+    today_trades = []
+    yesterday_trades = []
+    history_trades = []
+    
+    for trade in closed:
+        close_time = trade.get("close_time", "")
+        if close_time:
+            try:
+                trade_date = datetime.fromisoformat(close_time).date()
+            except:
+                trade_date = today
+        else:
+            continue
+            
+        t = {
+            "id": trade.get("id"),
+            "direction": "LONG" if trade.get("side") == "buy" else "SHORT",
+            "entry_price": trade.get("entry_price", 0),
+            "exit_price": trade.get("close_price") or 0,
+            "size": trade.get("size", 0),
+            "leverage": 1,
+            "pnl_usd": trade.get("pnl") or 0,
+            "signals_fired": trade.get("symbol", ""),
+            "outcome": trade.get("close_reason", ""),
+            "timestamp_exit": close_time
+        }
+        
+        if trade_date == today:
+            today_trades.append(t)
+        elif trade_date == yesterday:
+            yesterday_trades.append(t)
+        else:
+            history_trades.append(t)
+    
+    return {
+        "today": today_trades,
+        "yesterday": yesterday_trades,
+        "history": history_trades
+    }
 
 def get_stats():
+    tm = get_trade_manager()
     current_price = get_current_price()
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
     
-    # Ensure status column exists
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN status TEXT DEFAULT 'closed'")
-    except:
-        pass
+    if tm is None:
+        return {
+            "total_pnl": 0, "total_trades": 0, "daily_pnl": 0, "daily_trades": 0,
+            "wins": 0, "win_rate": 0, "open_positions": 0, "current_price": current_price,
+            "unrealized_pnl": 0, "today_closed_pnl": 0, "today_closed_count": 0,
+            "yesterday_closed_pnl": 0, "yesterday_closed_count": 0,
+            "history_closed_pnl": 0, "history_closed_count": 0
+        }
     
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades")
-    total_pnl, total_trades = c.fetchone()
-    total_trades = total_trades or 0
+    open_trades = tm.get_open_trades()
+    closed_trades = tm.get_closed_trades()
     
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_exit) = date('now')")
-    daily_pnl, daily_trades = c.fetchone()
-    daily_trades = daily_trades or 0
+    total_pnl = sum(t.get("pnl", 0) or 0 for t in closed_trades)
+    wins = sum(1 for t in closed_trades if (t.get("pnl") or 0) > 0)
+    total_trades = len(closed_trades)
     
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE pnl_usd > 0")
-    wins, win_count = c.fetchone()
+    today = datetime.now().date()
+    today_closed = [t for t in closed_trades if t.get("close_time") and 
+                   datetime.fromisoformat(t["close_time"]).date() == today]
+    today_pnl = sum(t.get("pnl", 0) or 0 for t in today_closed)
     
-    # Closed trades breakdown - use timestamp_exit
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_exit) = date('now')")
-    today_closed_pnl, today_closed_count = c.fetchone()
-    
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_exit) = date('now', '-1 day')")
-    yesterday_closed_pnl, yesterday_closed_count = c.fetchone()
-    
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_exit) < date('now', '-1 day')")
-    history_closed_pnl, history_closed_count = c.fetchone()
-    
-    # Get open trades properly
-    c.execute("SELECT direction, entry_price, size, leverage FROM trades WHERE status = 'open'")
-    open_trades = c.fetchall()
-    
-    unrealized_pnl = 0
+    unrealized = 0
     for trade in open_trades:
-        try:
-            direction, entry, size, leverage = trade
-            entry = float(entry or 0)
-            size = float(size or 0)
-            leverage = float(leverage or 1)
-            if direction == "LONG":
-                pnl = (current_price - entry) * size * leverage
-            else:
-                pnl = (entry - current_price) * size * leverage
-            unrealized_pnl += pnl
-        except:
-            pass
+        if trade.get("side") == "buy":
+            unrealized += (current_price - trade.get("entry_price", 0)) * trade.get("size", 0)
+        else:
+            unrealized += (trade.get("entry_price", 0) - current_price) * trade.get("size", 0)
     
-    conn.close()
+    yesterday = today - timedelta(days=1)
+    yesterday_closed = [t for t in closed_trades if t.get("close_time") and 
+                      datetime.fromisoformat(t["close_time"]).date() == yesterday]
+    yesterday_pnl = sum(t.get("pnl", 0) or 0 for t in yesterday_closed)
+    
+    history_pnl = sum(t.get("pnl", 0) or 0 for t in closed_trades if 
+                     (t.get("close_time") and datetime.fromisoformat(t["close_time"]).date() < yesterday))
+    
     return {
-        "total_pnl": total_pnl or 0,
-        "total_trades": total_trades or 0,
-        "daily_pnl": daily_pnl or 0,
-        "daily_trades": daily_trades or 0,
-        "wins": win_count or 0,
-        "win_rate": (win_count/total_trades*100) if total_trades and total_trades > 0 else 0,
+        "total_pnl": total_pnl,
+        "total_trades": total_trades,
+        "daily_pnl": today_pnl,
+        "daily_trades": len(today_closed),
+        "wins": wins,
+        "win_rate": (wins/total_trades*100) if total_trades > 0 else 0,
         "open_positions": len(open_trades),
         "current_price": current_price,
-        "unrealized_pnl": unrealized_pnl,
-        "today_closed_pnl": today_closed_pnl or 0,
-        "today_closed_count": today_closed_count or 0,
-        "yesterday_closed_pnl": yesterday_closed_pnl or 0,
-        "yesterday_closed_count": yesterday_closed_count or 0,
-        "history_closed_pnl": history_closed_pnl or 0,
-        "history_closed_count": history_closed_count or 0
+        "unrealized_pnl": unrealized,
+        "today_closed_pnl": today_pnl,
+        "today_closed_count": len(today_closed),
+        "yesterday_closed_pnl": yesterday_pnl,
+        "yesterday_closed_count": len(yesterday_closed),
+        "history_closed_pnl": history_pnl,
+        "history_closed_count": len(closed_trades) - len(today_closed) - len(yesterday_closed)
     }
 
 
 @app.route('/close/<int:trade_id>')
 def close_trade(trade_id):
+    tm = get_trade_manager()
+    if tm is None:
+        return redirect('/?error=trade_manager_not_available')
+    
     try:
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        
-        # Get trade details
-        c.execute("SELECT direction, entry_price, size, leverage FROM trades WHERE id = ? AND status = 'open'", (trade_id,))
-        row = c.fetchone()
-        
-        if not row:
-            conn.close()
-            return redirect('/?error=not_found')
-        
-        direction, entry, size, leverage = row
-        entry = float(entry or 0)
-        size = float(size or 0)
-        leverage = float(leverage or 1)
         current_price = get_current_price()
         
-        # ACTUALLY CLOSE ON EXCHANGE
         close_success = False
         if BOT_AVAILABLE and hasattr(config, 'DELTA_API_KEY') and config.DELTA_API_KEY:
             try:
                 client = DeltaClient(config.DELTA_API_KEY, config.DELTA_API_SECRET)
-                close_result = client.close_position(direction, size)
-                close_success = close_result is not None
-                print(f"CLOSE ON EXCHANGE: {close_result}")
+                for trade in tm.get_open_trades():
+                    if str(trade["id"]) == str(trade_id):
+                        side = trade["side"]
+                        size = trade["size"]
+                        result = client.close_position("LONG" if side == "buy" else "SHORT", size)
+                        close_success = result is not None
+                        break
             except Exception as e:
                 print(f"Exchange close error: {e}")
         
-        # Calculate PnL
-        if direction == "LONG":
-            pnl = (current_price - entry) * size * leverage
-        else:
-            pnl = (entry - current_price) * size * leverage
+        trade = tm.close_trade(str(trade_id), current_price, datetime.now().isoformat(), 
+                               "MANUAL_CLOSE" if close_success else "MANUAL_DB_ONLY")
         
-        timestamp = datetime.now().isoformat()
-        outcome = "MANUAL_CLOSE" if close_success else "MANUAL_DB_ONLY"
-        c.execute("""UPDATE trades SET timestamp_exit=?, exit_price=?, pnl_usd=?, status=?, outcome=? 
-                    WHERE id=?""", (timestamp, current_price, pnl, "closed", outcome, trade_id))
-        conn.commit()
-        conn.close()
+        if trade:
+            pnl = trade.get("pnl", 0)
+        else:
+            pnl = 0
         
         return redirect('/?closed=1&pnl=' + str(round(pnl, 2)))
     except Exception as e:
@@ -243,7 +240,7 @@ HTML = """
     <meta http-equiv="refresh" content="3">
     <style>
         body { font-family: Arial; background: #111; color: #eee; margin: 0; padding: 20px; }
-        .container { max-width: 1100px; margin: 0 auto; }
+        .container { max-width: 1200px; margin: 0 auto; }
         h1 { color: #0f0; text-align: center; margin-bottom: 15px; }
         .price { text-align: center; font-size: 22px; color: #fa0; margin-bottom: 20px; }
         .msg { text-align: center; padding: 10px; margin-bottom: 15px; border-radius: 5px; }
@@ -261,8 +258,7 @@ HTML = """
         th { background: #222; color: #0f0; font-size: 12px; }
         .long { color: #0f0; font-weight: bold; }
         .short { color: #f44; font-weight: bold; }
-        .btn { background: #f44; color: #fff; text-decoration: none; padding: 6px 14px; 
-               border-radius: 4px; font-size: 12px; }
+        .btn { background: #f44; color: #fff; text-decoration: none; padding: 6px 14px; border-radius: 4px; font-size: 12px; }
         .btn:hover { background: #f66; }
         .empty { text-align: center; color: #666; padding: 20px; }
     </style>
@@ -289,28 +285,26 @@ HTML = """
         
         <h2>Open Positions</h2>
         <table>
-            <tr><th>Dir</th><th>Entry</th><th>Now</th><th>Size</th><th>Lev</th><th>SL</th><th>TP</th><th>PnL</th><th>Setup</th><th>Close</th></tr>
+            <tr><th>Dir</th><th>Entry</th><th>Now</th><th>Size</th><th>SL</th><th>TP</th><th>PnL</th><th>Close</th></tr>
             {% for t in trades if t.status == 'open' %}
             <tr>
                 <td class="{{ 'long' if t.direction == 'LONG' else 'short' }}">{{ t.direction }}</td>
                 <td>${{ "%.0f"|format(t.entry_price) }}</td>
                 <td>${{ "%.0f"|format(t.current_price) }}</td>
                 <td>{{ "%.4f"|format(t.size) }}</td>
-                <td>{{ "%.0f"|format(t.leverage) }}x</td>
                 <td>${{ "%.0f"|format(t.stop_loss) }}</td>
                 <td>${{ "%.0f"|format(t.take_profit) }}</td>
                 <td class="{{ 'green' if t.current_pnl > 0 else 'red' }}">${{ "%.2f"|format(t.current_pnl) }}</td>
-                <td>{{ t.grade }}</td>
                 <td><a href="/close/{{ t.id }}" class="btn">CLOSE</a></td>
             </tr>
             {% else %}
-            <tr><td colspan="10" class="empty">No open positions</td></tr>
+            <tr><td colspan="8" class="empty">No open positions</td></tr>
             {% endfor %}
         </table>
         
         <h2>Today's Closed Trades ({{ closed.today|length }}) - PnL: ${{ "%.2f"|format(stats.today_closed_pnl) }}</h2>
         <table>
-            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Setup</th><th>Time</th></tr>
+            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Time</th></tr>
             {% for t in closed.today %}
             <tr>
                 <td class="{{ 'long' if t.direction == 'LONG' else 'short' }}">{{ t.direction }}</td>
@@ -319,17 +313,16 @@ HTML = """
                 <td>{{ "%.4f"|format(t.size) }}</td>
                 <td class="{{ 'green' if t.pnl_usd > 0 else 'red' }}">${{ "%.2f"|format(t.pnl_usd) }}</td>
                 <td>{{ t.outcome }}</td>
-                <td>{{ t.grade }}</td>
                 <td>{{ t.timestamp_exit[:16] if t.timestamp_exit else '' }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="8" class="empty">No trades today</td></tr>
+            <tr><td colspan="7" class="empty">No trades today</td></tr>
             {% endfor %}
         </table>
         
         <h2>Yesterday's Closed Trades ({{ closed.yesterday|length }}) - PnL: ${{ "%.2f"|format(stats.yesterday_closed_pnl) }}</h2>
         <table>
-            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Setup</th><th>Time</th></tr>
+            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Time</th></tr>
             {% for t in closed.yesterday %}
             <tr>
                 <td class="{{ 'long' if t.direction == 'LONG' else 'short' }}">{{ t.direction }}</td>
@@ -338,17 +331,16 @@ HTML = """
                 <td>{{ "%.4f"|format(t.size) }}</td>
                 <td class="{{ 'green' if t.pnl_usd > 0 else 'red' }}">${{ "%.2f"|format(t.pnl_usd) }}</td>
                 <td>{{ t.outcome }}</td>
-                <td>{{ t.grade }}</td>
                 <td>{{ t.timestamp_exit[:16] if t.timestamp_exit else '' }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="8" class="empty">No trades yesterday</td></tr>
+            <tr><td colspan="7" class="empty">No trades yesterday</td></tr>
             {% endfor %}
         </table>
         
         <h2>Historical Closed Trades ({{ closed.history|length }}) - PnL: ${{ "%.2f"|format(stats.history_closed_pnl) }}</h2>
         <table>
-            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Setup</th><th>Time</th></tr>
+            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Time</th></tr>
             {% for t in closed.history %}
             <tr>
                 <td class="{{ 'long' if t.direction == 'LONG' else 'short' }}">{{ t.direction }}</td>
@@ -357,15 +349,12 @@ HTML = """
                 <td>{{ "%.4f"|format(t.size) }}</td>
                 <td class="{{ 'green' if t.pnl_usd > 0 else 'red' }}">${{ "%.2f"|format(t.pnl_usd) }}</td>
                 <td>{{ t.outcome }}</td>
-                <td>{{ t.grade }}</td>
                 <td>{{ t.timestamp_exit[:16] if t.timestamp_exit else '' }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="8" class="empty">No historical trades</td></tr>
+            <tr><td colspan="7" class="empty">No historical trades</td></tr>
             {% endfor %}
         </table>
-        
-        <h2>All Closed Trades - Total PnL: ${{ "%.2f"|format(stats.today_closed_pnl + stats.yesterday_closed_pnl + stats.history_closed_pnl) }}</h2>
         
         <p style="text-align:center; color:#555; margin-top:20px;">{{ last_update }}</p>
     </div>
@@ -374,170 +363,107 @@ HTML = """
 """
 
 
-def get_closed_trades():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    
-    # Today's closed trades (by exit time, not entry)
-    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_exit) = date('now') ORDER BY id DESC")
-    today_cols = [desc[0] for desc in c.description]
-    today_trades = [dict(zip(today_cols, row)) for row in c.fetchall()]
-    
-    # Yesterday's closed trades
-    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_exit) = date('now', '-1 day') ORDER BY id DESC")
-    yesterday_cols = [desc[0] for desc in c.description]
-    yesterday_trades = [dict(zip(yesterday_cols, row)) for row in c.fetchall()]
-    
-    # History closed trades
-    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_exit) < date('now', '-1 day') ORDER BY id DESC")
-    history_cols = [desc[0] for desc in c.description]
-    history_trades = [dict(zip(history_cols, row)) for row in c.fetchall()]
-    
-    conn.close()
-    
-    return {
-        "today": today_trades,
-        "yesterday": yesterday_trades,
-        "history": history_trades
-    }
+@app.route('/')
+def index():
+    closed = get_closed_trades()
+    return render_template_string(HTML, stats=get_stats(), trades=get_trades(), closed=closed, last_update=get_indian_time(), request=request)
 
 
-# ===== API ENDPOINTS FOR REAL-TIME DATA =====
 @app.route('/api/open-trades')
 def api_open_trades():
-    """Return all open trades with live PnL"""
+    tm = get_trade_manager()
+    if tm is None:
+        return {"trades": [], "current_price": get_current_price()}
+    
     current_price = get_current_price()
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    
-    c.execute("""SELECT id, direction, entry_price, size, leverage, stop_loss, take_profit, 
-                 signals_fired, timestamp_entry FROM trades WHERE status = 'open'""")
-    
     trades = []
-    for row in c.fetchall():
-        trade_id, direction, entry, size, lev, sl, tp, setup, timestamp = row
-        entry = float(entry or 0)
-        size = float(size or 0)
-        lev = float(lev or 1)
+    
+    for trade in tm.get_open_trades():
+        entry = trade.get("entry_price", 0)
+        size = trade.get("size", 0)
+        lev = 1
         
-        # Calculate live PnL
-        if direction == "LONG":
+        if trade.get("side") == "buy":
             pnl = (current_price - entry) * size * lev
         else:
             pnl = (entry - current_price) * size * lev
         
         trades.append({
-            "id": trade_id,
-            "direction": direction,
+            "id": trade.get("id"),
+            "direction": "LONG" if trade.get("side") == "buy" else "SHORT",
             "entry_price": entry,
             "current_price": current_price,
             "size": size,
             "leverage": lev,
-            "stop_loss": float(sl or 0),
-            "take_profit": float(tp or 0),
-            "pnl": round(pnl, 2),
-            "setup": setup,
-            "timestamp": timestamp
+            "pnl": round(pnl, 2)
         })
     
-    conn.close()
     return {"trades": trades, "current_price": current_price}
 
 
 @app.route('/api/closed-trades')
 def api_closed_trades():
-    """Return all closed trades"""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    
-    c.execute("""SELECT id, direction, entry_price, exit_price, size, leverage, pnl_usd, 
-                 signals_fired, outcome, timestamp_entry, timestamp_exit 
-                 FROM trades WHERE status = 'closed' ORDER BY id DESC""")
+    tm = get_trade_manager()
+    if tm is None:
+        return {"trades": []}
     
     trades = []
-    for row in c.fetchall():
+    for trade in tm.get_closed_trades():
         trades.append({
-            "id": row[0],
-            "direction": row[1],
-            "entry_price": float(row[2] or 0),
-            "exit_price": float(row[3] or 0),
-            "size": float(row[4] or 0),
-            "leverage": float(row[5] or 1),
-            "pnl": float(row[6] or 0),
-            "setup": row[7],
-            "outcome": row[8],
-            "timestamp_entry": row[9],
-            "timestamp_exit": row[10]
+            "id": trade.get("id"),
+            "direction": "LONG" if trade.get("side") == "buy" else "SHORT",
+            "entry_price": trade.get("entry_price", 0),
+            "exit_price": trade.get("close_price") or 0,
+            "size": trade.get("size", 0),
+            "pnl": trade.get("pnl") or 0,
+            "timestamp_entry": trade.get("open_time", ""),
+            "timestamp_exit": trade.get("close_time", "")
         })
     
-    conn.close()
     return {"trades": trades}
 
 
 @app.route('/api/stats')
 def api_stats():
-    """Return stats as JSON"""
     return get_stats()
 
 
 @app.route('/api/current-price')
 def api_price():
-    """Return current price"""
-    price = get_current_price()
-    return {"price": price, "timestamp": get_indian_time()}
+    return {"price": get_current_price(), "timestamp": get_indian_time()}
 
 
 @app.route('/api/close/<int:trade_id>')
 def api_close_trade(trade_id):
-    """Close a trade via API"""
+    tm = get_trade_manager()
+    if tm is None:
+        return {"success": False, "error": "TradeManager not available"}
+    
     try:
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        
-        c.execute("SELECT direction, entry_price, size, leverage FROM trades WHERE id = ? AND status = 'open'", (trade_id,))
-        row = c.fetchone()
-        
-        if not row:
-            conn.close()
-            return {"success": False, "error": "Trade not found"}
-        
-        direction, entry, size, leverage = row
-        entry = float(entry or 0)
-        size = float(size or 0)
-        leverage = float(leverage or 1)
         current_price = get_current_price()
         
-        # ACTUALLY CLOSE ON EXCHANGE
         close_success = False
         if BOT_AVAILABLE and hasattr(config, 'DELTA_API_KEY') and config.DELTA_API_KEY:
             try:
                 client = DeltaClient(config.DELTA_API_KEY, config.DELTA_API_SECRET)
-                close_result = client.close_position(direction, size)
-                close_success = close_result is not None
-            except Exception as e:
+                for trade in tm.get_open_trades():
+                    if str(trade["id"]) == str(trade_id):
+                        side = trade["side"]
+                        size = trade["size"]
+                        result = client.close_position("LONG" if side == "buy" else "SHORT", size)
+                        close_success = result is not None
+                        break
+            except:
                 pass
         
-        if direction == "LONG":
-            pnl = (current_price - entry) * size * leverage
-        else:
-            pnl = (entry - current_price) * size * leverage
+        trade = tm.close_trade(str(trade_id), current_price, datetime.now().isoformat(), 
+                             "MANUAL_CLOSE" if close_success else "MANUAL_DB_ONLY")
         
-        timestamp = datetime.now().isoformat()
-        outcome = "MANUAL_CLOSE" if close_success else "MANUAL_DB_ONLY"
-        c.execute("""UPDATE trades SET timestamp_exit=?, exit_price=?, pnl_usd=?, status=?, outcome=? 
-                    WHERE id=?""", (timestamp, current_price, pnl, "closed", outcome, trade_id))
-        conn.commit()
-        conn.close()
+        pnl = trade.get("pnl", 0) if trade else 0
         
         return {"success": True, "pnl": round(pnl, 2), "exit_price": current_price, "exchange_closed": close_success}
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-
-@app.route('/')
-def index():
-    closed = get_closed_trades()
-    return render_template_string(HTML, stats=get_stats(), trades=get_trades(), closed=closed, last_update=get_indian_time(), request=request)
 
 
 if __name__ == '__main__':
