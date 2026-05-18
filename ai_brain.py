@@ -119,8 +119,9 @@ class AIBrain:
         """Get current session and whether trading allowed"""
         utc_hour = datetime.now(timezone.utc).hour
         
+        # Dead session: allow scalping only
         if config.SESSION_DEAD_START <= utc_hour or utc_hour < config.SESSION_DEAD_END:
-            return "dead", False
+            return "dead", True  # Allow scalping
         
         if config.SESSION_ASIA_START <= utc_hour < config.SESSION_LONDON_START:
             return "asia", True
@@ -138,11 +139,11 @@ class AIBrain:
         if session == "dead":
             return {
                 "session": session,
-                "leverage_mod": -2,
-                "confidence_boost": 0,
-                "min_conditions": 4,
-                "max_daily_multiplier": 0.5,
-                "description": "DEAD - reduce aggression"
+                "leverage_mod": -1,
+                "confidence_boost": 1,
+                "min_conditions": 2,
+                "max_daily_multiplier": 0.8,
+                "description": "DEAD - scalping allowed"
             }
         elif session == "asia":
             return {
