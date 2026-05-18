@@ -15,6 +15,7 @@ from delta_client import DeltaClient
 from indicators import Indicators
 from ai_brain import AIBrain
 import dashboard
+from trade_manager import save_trade, close_trade, get_open
 
 try:
     from trade_manager import TradeManager
@@ -395,6 +396,20 @@ class TradingBot:
             
             self.open_positions.append(position)
             
+            # SAVE TO DATABASE INSTANTLY
+            trade_id = f"trade_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            save_trade({
+                'id': trade_id,
+                'symbol': config.SYMBOL,
+                'side': "buy" if direction == "LONG" else "sell",
+                'size': position_size,
+                'entry_price': price,
+                'tp': setup.tp2,
+                'sl': setup.stop_loss,
+                'leverage': setup.leverage
+            })
+            position["trade_id"] = trade_id
+            
             # Log to both dashboard (SQLite) and trade_manager (JSON)
             dashboard.log_trade(
                 direction=direction,
@@ -541,6 +556,10 @@ class TradingBot:
                     except Exception as e:
                         logger.warning(f"TradeManager close failed: {e}")
                 
+                # ALSO call simple close_trade for dashboard
+                trade_id = pos.get("trade_id", f"trade_{idx+1}")
+                close_trade(trade_id, current_price, reason.lower())
+                
                 logger.info(f"Trade closed: {reason} | PnL: ${pnl:.2f} | Exit: ${current_price}")
     
     def _load_open_trades_from_db(self):
@@ -589,6 +608,28 @@ class TradingBot:
             thread = threading.Thread(target=sync_loop, daemon=True)
             thread.start()
             logger.info("Background sync thread started")
+        
+        # ADDITIONAL SYNC FOR MANUAL CLOSE DETECTION
+        def sync_positions():
+            while True:
+                try:
+                    open_trades = get_open()
+                    exchange_positions = self.client.get_positions()
+                    exchange_ids = [p['id'] for p in exchange_positions]
+                    
+                    for t in open_trades:
+                        if t['id'] not in exchange_ids:
+                            ticker = self.client.get_market_data()
+                            close_price = ticker.get('last_price', 0) if ticker else 0
+                            if close_price > 0:
+                                close_trade(t['id'], close_price, 'manual')
+                except Exception as e:
+                    print(f"Sync error: {e}")
+                time.sleep(3)
+        
+        sync_thread = threading.Thread(target=sync_positions, daemon=True)
+        sync_thread.start()
+        logger.info("Manual close detection thread started")
     
     def _sync_with_exchange(self):
         """Sync trades with exchange - detect manual closes"""
