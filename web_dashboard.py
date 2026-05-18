@@ -117,13 +117,15 @@ def get_stats():
     except:
         pass
     
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed'")
+    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades")
     total_pnl, total_trades = c.fetchone()
+    total_trades = total_trades or 0
     
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE date(timestamp_entry) = date('now') AND status = 'closed'")
+    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE date(timestamp_entry) = date('now')")
     daily_pnl, daily_trades = c.fetchone()
+    daily_trades = daily_trades or 0
     
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE pnl_usd > 0 AND status = 'closed'")
+    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE pnl_usd > 0")
     wins, win_count = c.fetchone()
     
     # Get open trades properly
