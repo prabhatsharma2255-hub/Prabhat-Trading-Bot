@@ -141,19 +141,14 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
             pass
         
         try:
-            c.execute('''INSERT INTO trades 
-                (timestamp_entry, symbol, direction, regime, grade, module_used, 
-                 entry_price, size, pnl_usd, status, signals_fired, htf_aligned, session, leverage, stop_loss, take_profit)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                (timestamp, "BTCUSD", direction, regime, grade, module, entry_price, size, pnl, status, signals, 1 if htf_aligned else 0, session, leverage, stop_loss, take_profit))
+            cols = "timestamp_entry, symbol, direction, regime, grade, module_used, entry_price, size, pnl_usd, status, signals_fired, htf_aligned, session, leverage, stop_loss, take_profit"
+            vals = (timestamp, "BTCUSD", direction, regime, grade, module, entry_price, size, pnl, status, signals, 1 if htf_aligned else 0, session, leverage, stop_loss, take_profit)
+            c.execute(f"INSERT INTO trades ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", vals)
         except Exception as e:
             print(f"INSERT ERROR: {e}")
     
     elif status == "closed":
-        # Find trade by both direction AND entry_price to ensure we close the right one
-        c.execute('''UPDATE trades SET 
-            timestamp_exit = ?, exit_price = ?, pnl_usd = ?, status = ?, outcome = ?
-            WHERE direction = ? AND entry_price = ? AND status = 'open' LIMIT 1''',
+        c.execute("UPDATE trades SET timestamp_exit=?, exit_price=?, pnl_usd=?, status=?, outcome=? WHERE direction=? AND entry_price=? AND status='open' LIMIT 1",
             (timestamp, exit_price, pnl, status, outcome, direction, entry_price))
     
     conn.commit()
