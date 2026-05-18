@@ -6,6 +6,7 @@ Works with 12 named setups + News Intelligence + Move Detection
 
 import time
 import logging
+import sqlite3
 from datetime import datetime
 from typing import Dict, Optional, List
 
@@ -69,6 +70,24 @@ class TradingBot:
         
         if not config.DRY_RUN:
             self._sync_positions()
+        else:
+            self._cleanup_stale_positions()
+    
+    def _cleanup_stale_positions(self):
+        """Clean up stale open positions in database (DRY_RUN mode)."""
+        import dashboard
+        try:
+            conn = sqlite3.connect(dashboard.DB_FILE)
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM trades WHERE status = 'open'")
+            count = c.fetchone()[0]
+            if count > 0:
+                logger.warning(f"Found {count} stale open positions in database - cleaning up")
+                c.execute("UPDATE trades SET status = 'closed', outcome = 'STALE_CLEANUP' WHERE status = 'open'")
+                conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Failed to cleanup stale positions: {e}")
     
     def _sync_positions(self):
         """Sync local positions with exchange."""
