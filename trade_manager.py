@@ -374,6 +374,17 @@ class TradeManager:
         return dict(row) if row else None
 
 
+# Alias methods for compatibility
+    def get_open_trades(self):
+        return self.get_all_open_trades()
+    
+    def get_closed_trades(self):
+        return self.get_all_closed_trades()
+    
+    def get_all_trades(self):
+        return self.get_all_trades()
+
+
 # Standalone functions for easy import
 def get_trade_manager() -> TradeManager:
     return TradeManager()
