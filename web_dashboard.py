@@ -121,21 +121,21 @@ def get_stats():
     total_pnl, total_trades = c.fetchone()
     total_trades = total_trades or 0
     
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_entry) = date('now')")
+    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_exit) = date('now')")
     daily_pnl, daily_trades = c.fetchone()
     daily_trades = daily_trades or 0
     
     c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE pnl_usd > 0")
     wins, win_count = c.fetchone()
     
-    # Closed trades breakdown
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_entry) = date('now')")
+    # Closed trades breakdown - use timestamp_exit
+    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_exit) = date('now')")
     today_closed_pnl, today_closed_count = c.fetchone()
     
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_entry) = date('now', '-1 day')")
+    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_exit) = date('now', '-1 day')")
     yesterday_closed_pnl, yesterday_closed_count = c.fetchone()
     
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_entry) < date('now', '-1 day')")
+    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_exit) < date('now', '-1 day')")
     history_closed_pnl, history_closed_count = c.fetchone()
     
     # Get open trades properly
@@ -356,18 +356,18 @@ def get_closed_trades():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
-    # Today's closed trades
-    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_entry) = date('now') ORDER BY id DESC")
+    # Today's closed trades (by exit time, not entry)
+    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_exit) = date('now') ORDER BY id DESC")
     today_cols = [desc[0] for desc in c.description]
     today_trades = [dict(zip(today_cols, row)) for row in c.fetchall()]
     
     # Yesterday's closed trades
-    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_entry) = date('now', '-1 day') ORDER BY id DESC")
+    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_exit) = date('now', '-1 day') ORDER BY id DESC")
     yesterday_cols = [desc[0] for desc in c.description]
     yesterday_trades = [dict(zip(yesterday_cols, row)) for row in c.fetchall()]
     
     # History closed trades
-    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_entry) < date('now', '-1 day') ORDER BY id DESC")
+    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_exit) < date('now', '-1 day') ORDER BY id DESC")
     history_cols = [desc[0] for desc in c.description]
     history_trades = [dict(zip(history_cols, row)) for row in c.fetchall()]
     
