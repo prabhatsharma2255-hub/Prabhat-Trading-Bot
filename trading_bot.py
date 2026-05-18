@@ -16,6 +16,8 @@ import config
 from delta_client import DeltaClient
 from indicators import Indicators
 from ai_brain import AIBrain
+from flask import Flask, jsonify
+import threading
 
 # Dashboard import - only for Flask, not for worker
 try:
@@ -24,6 +26,35 @@ except:
     dashboard = None
 
 from trade_manager import save_trade, close_trade, get_open
+
+# Simple API for dashboard sync
+_api_app = Flask(__name__)
+_api_data = {"open": [], "closed": []}
+
+@_api_app.route("/api/trades")
+def api_trades():
+    return jsonify(_api_data)
+
+@_api_app.route("/api/stats")
+def api_stats():
+    closed = _api_data["closed"]
+    total = sum(t.get("pnl", 0) or 0 for t in closed)
+    wins = len([t for t in closed if (t.get("pnl", 0) or 0) > 0])
+    rate = (wins / len(closed) * 100) if closed else 0
+    return jsonify({"total_pnl": total, "win_rate": rate, "open": len(_api_data["open"]), "closed": len(closed)})
+
+def _start_api_server():
+    _api_app.run(host="0.0.0.0", port=5001, debug=False)
+
+def update_api_trades():
+    """Update API with current trade data"""
+    global _api_data
+    try:
+        from trade_manager import get_open, get_closed
+        _api_data["open"] = get_open()
+        _api_data["closed"] = get_closed()
+    except:
+        pass
 
 try:
     from trade_manager import TradeManager
@@ -466,6 +497,7 @@ class TradingBot:
                     logger.warning(f"TradeManager save failed: {e}")
             
             logger.info("Trade executed successfully")
+            update_api_trades()
             return True
         
         logger.error("Order placement failed")
@@ -577,6 +609,7 @@ class TradingBot:
                 close_trade(trade_id, current_price, reason.lower())
                 
                 logger.info(f"Trade closed: {reason} | PnL: ${pnl:.2f} | Exit: ${current_price}")
+                update_api_trades()
     
     def _load_open_trades_from_db(self):
         """Load open trades from database on startup"""
@@ -646,6 +679,11 @@ class TradingBot:
         sync_thread = threading.Thread(target=sync_positions, daemon=True)
         sync_thread.start()
         logger.info("Manual close detection thread started")
+        
+        # START API SERVER for dashboard sync
+        api_thread = threading.Thread(target=_start_api_server, daemon=True)
+        api_thread.start()
+        logger.info("API server started on port 5001")
     
     def _sync_with_exchange(self):
         """Sync trades with exchange - detect manual closes"""
