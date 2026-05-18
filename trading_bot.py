@@ -76,13 +76,30 @@ class TradingBot:
     def _cleanup_stale_positions(self):
         """Clean up stale open positions in database (DRY_RUN mode)."""
         try:
+            current_price = self.client.get_market_data().get("last_price", 0)
             conn = sqlite3.connect("trades.db")
             c = conn.cursor()
-            c.execute("SELECT COUNT(*) FROM trades WHERE status = 'open'")
-            count = c.fetchone()[0]
-            if count > 0:
-                logger.warning(f"Found {count} stale open positions in database - cleaning up")
-                c.execute("UPDATE trades SET status = 'closed', outcome = 'STALE_CLEANUP' WHERE status = 'open'")
+            c.execute("SELECT id, direction, entry_price, size, leverage FROM trades WHERE status = 'open'")
+            stale_trades = c.fetchall()
+            
+            if stale_trades:
+                logger.warning(f"Found {len(stale_trades)} stale open positions - fixing with current price ${current_price}")
+                
+                for trade in stale_trades:
+                    trade_id, direction, entry, size, leverage = trade
+                    entry = float(entry or 0)
+                    size = float(size or 0)
+                    leverage = float(leverage or 1)
+                    
+                    if direction == "LONG":
+                        pnl = (current_price - entry) * size * leverage
+                    else:
+                        pnl = (entry - current_price) * size * leverage
+                    
+                    timestamp = datetime.now().isoformat()
+                    c.execute("""UPDATE trades SET timestamp_exit=?, exit_price=?, pnl_usd=?, status=?, outcome=? 
+                                WHERE id=?""", (timestamp, current_price, pnl, "closed", "STALE_CLEANUP", trade_id))
+                
                 conn.commit()
             conn.close()
         except Exception as e:
