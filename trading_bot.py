@@ -229,7 +229,8 @@ class TradingBot:
             logger.info(f"Risk: {setup.risk_pct*100}% | Leverage: {setup.leverage}x")
         else:
             reason = analysis.get("skip_reason", "no_setup")
-            logger.info(f"DECISION: NO TRADE - {reason}")
+            triggered_count = sum(1 for s in analysis.get("all_setups", []) if s.triggered)
+            logger.info(f"DECISION: NO TRADE - {reason} | Triggered: {triggered_count}/12")
         
         logger.info(f"Open Positions: {len(self.open_positions)}")
         
@@ -257,18 +258,21 @@ class TradingBot:
     
     def execute_trade(self, analysis: Dict) -> bool:
         if not analysis.get("can_trade") or not analysis.get("setup"):
+            logger.warning(f"CANNOT TRADE: can_trade={analysis.get('can_trade')}, setup={analysis.get('setup')}")
             return False
         
         if len(self.open_positions) >= config.MAX_OPEN_POSITIONS:
-            logger.warning(f"Max open positions reached: {config.MAX_OPEN_POSITIONS}")
+            logger.warning(f"BLOCKED: Max open positions ({len(self.open_positions)}/{config.MAX_OPEN_POSITIONS})")
             return False
         
         setup = analysis["setup"]
         
         for pos in self.open_positions:
             if pos.get("setup") == setup.setup_name:
-                logger.warning(f"Setup {setup.setup_name} already open - blocking")
+                logger.warning(f"BLOCKED: Setup {setup.setup_name} already open")
                 return False
+        
+        logger.info(f"TRADE READY: {setup.setup_name} {setup.direction} SL={setup.stop_loss:.0f} TP={setup.tp2:.0f}")
         
         state = analysis["state"]
         
