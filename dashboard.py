@@ -136,20 +136,23 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
     
     if status == "open":
         try:
-            c.execute("UPDATE trades SET status = 'closed', outcome = 'REPLACED' WHERE id = (SELECT id FROM trades WHERE direction = ? AND status = 'open' ORDER BY id DESC LIMIT 1)", (direction,))
-        except:
-            pass
-        
-        try:
             cols = "timestamp_entry, symbol, direction, regime, grade, module_used, entry_price, size, pnl_usd, status, signals_fired, htf_aligned, session, leverage, stop_loss, take_profit"
-            vals = (timestamp, "BTCUSD", direction, regime, grade, module, entry_price, size, pnl, status, signals, 1 if htf_aligned else 0, session, leverage, stop_loss, take_profit)
+            vals = (timestamp, "BTCUSD", direction, regime or "neutral", grade or module or "unknown", module or grade or "unknown", 
+                    float(entry_price), float(size), float(pnl or 0), status, 
+                    signals or "", int(htf_aligned or 0), session or "unknown", 
+                    int(leverage or 1), float(stop_loss or 0), float(take_profit or 0))
             c.execute(f"INSERT INTO trades ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", vals)
+            print(f"LOGGED: Open trade {direction} {entry_price} {size}")
         except Exception as e:
             print(f"INSERT ERROR: {e}")
     
     elif status == "closed":
-        c.execute("UPDATE trades SET timestamp_exit=?, exit_price=?, pnl_usd=?, status=?, outcome=? WHERE direction=? AND entry_price=? AND status='open' LIMIT 1",
-            (timestamp, exit_price, pnl, status, outcome, direction, entry_price))
+        try:
+            c.execute("UPDATE trades SET timestamp_exit=?, exit_price=?, pnl_usd=?, status=?, outcome=? WHERE id=(SELECT id FROM trades WHERE status='open' ORDER BY id DESC LIMIT 1)",
+                (timestamp, float(exit_price or 0), float(pnl or 0), status, outcome or "closed"))
+            print(f"LOGGED: Closed trade exit={exit_price} pnl={pnl}")
+        except Exception as e:
+            print(f"CLOSE ERROR: {e}")
     
     conn.commit()
     conn.close()
