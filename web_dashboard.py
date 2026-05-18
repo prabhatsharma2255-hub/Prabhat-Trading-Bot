@@ -6,6 +6,15 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 import requests
 import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    import config
+    from delta_client import DeltaClient
+    BOT_AVAILABLE = True
+except:
+    BOT_AVAILABLE = False
 
 def get_indian_time():
     ist_offset = timedelta(hours=5, minutes=30)
@@ -197,14 +206,27 @@ def close_trade(trade_id):
         leverage = float(leverage or 1)
         current_price = get_current_price()
         
+        # ACTUALLY CLOSE ON EXCHANGE
+        close_success = False
+        if BOT_AVAILABLE and hasattr(config, 'DELTA_API_KEY') and config.DELTA_API_KEY:
+            try:
+                client = DeltaClient(config.DELTA_API_KEY, config.DELTA_API_SECRET)
+                close_result = client.close_position(direction, size)
+                close_success = close_result is not None
+                print(f"CLOSE ON EXCHANGE: {close_result}")
+            except Exception as e:
+                print(f"Exchange close error: {e}")
+        
+        # Calculate PnL
         if direction == "LONG":
             pnl = (current_price - entry) * size * leverage
         else:
             pnl = (entry - current_price) * size * leverage
         
         timestamp = datetime.now().isoformat()
+        outcome = "MANUAL_CLOSE" if close_success else "MANUAL_DB_ONLY"
         c.execute("""UPDATE trades SET timestamp_exit=?, exit_price=?, pnl_usd=?, status=?, outcome=? 
-                    WHERE id=?""", (timestamp, current_price, pnl, "closed", "MANUAL", trade_id))
+                    WHERE id=?""", (timestamp, current_price, pnl, "closed", outcome, trade_id))
         conn.commit()
         conn.close()
         
@@ -485,18 +507,29 @@ def api_close_trade(trade_id):
         leverage = float(leverage or 1)
         current_price = get_current_price()
         
+        # ACTUALLY CLOSE ON EXCHANGE
+        close_success = False
+        if BOT_AVAILABLE and hasattr(config, 'DELTA_API_KEY') and config.DELTA_API_KEY:
+            try:
+                client = DeltaClient(config.DELTA_API_KEY, config.DELTA_API_SECRET)
+                close_result = client.close_position(direction, size)
+                close_success = close_result is not None
+            except Exception as e:
+                pass
+        
         if direction == "LONG":
             pnl = (current_price - entry) * size * leverage
         else:
             pnl = (entry - current_price) * size * leverage
         
         timestamp = datetime.now().isoformat()
+        outcome = "MANUAL_CLOSE" if close_success else "MANUAL_DB_ONLY"
         c.execute("""UPDATE trades SET timestamp_exit=?, exit_price=?, pnl_usd=?, status=?, outcome=? 
-                    WHERE id=?""", (timestamp, current_price, pnl, "closed", "MANUAL", trade_id))
+                    WHERE id=?""", (timestamp, current_price, pnl, "closed", outcome, trade_id))
         conn.commit()
         conn.close()
         
-        return {"success": True, "pnl": round(pnl, 2), "exit_price": current_price}
+        return {"success": True, "pnl": round(pnl, 2), "exit_price": current_price, "exchange_closed": close_success}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
