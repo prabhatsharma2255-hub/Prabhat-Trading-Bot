@@ -7,7 +7,7 @@ Works with 12 named setups + News Intelligence + Move Detection
 import time
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional, List
 
 import config
@@ -73,10 +73,25 @@ class TradingBot:
         
         self._run_connection_test()
         
+        # Initialize SQLite TradeManager
+        self.trade_manager = None
+        if TradeManager:
+            try:
+                self.trade_manager = TradeManager()
+                logger.info("TradeManager initialized (SQLite)")
+            except Exception as e:
+                logger.warning(f"TradeManager init failed: {e}")
+        
+        # Load open trades from database
+        self._load_open_trades_from_db()
+        
         if not config.DRY_RUN:
             self._sync_positions()
         else:
             self._cleanup_stale_positions()
+        
+        # Start background sync thread
+        self._start_background_sync()
     
     def _cleanup_stale_positions(self):
         """Clean up stale open positions in database (DRY_RUN mode)."""
@@ -400,21 +415,26 @@ class TradingBot:
                 take_profit=setup.tp2
             )
             
-            # Also save to JSON for dashboard sync
-            if TradeManager:
+            # Also save to SQLite TradeManager for dashboard sync
+            if self.trade_manager:
                 try:
-                    tm = TradeManager()
+                    trade_id = f"trade_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
                     side = "buy" if direction == "LONG" else "sell"
-                    tm.open_trade(
-                        trade_id=str(len(self.open_positions)),
-                        symbol=config.SYMBOL,
-                        side=side,
-                        entry_price=price,
-                        tp=setup.tp2,
-                        sl=setup.stop_loss,
-                        size=position_size,
-                        open_time=datetime.now().isoformat()
-                    )
+                    
+                    self.trade_manager.save_trade({
+                        "trade_id": trade_id,
+                        "symbol": config.SYMBOL,
+                        "side": side,
+                        "entry_price": price,
+                        "tp": setup.tp2,
+                        "sl": setup.stop_loss,
+                        "size": position_size,
+                        "leverage": setup.leverage,
+                        "open_time": datetime.now(timezone.utc).isoformat()
+                    })
+                    
+                    # Store trade_id in position for later reference
+                    position["trade_id"] = trade_id
                 except Exception as e:
                     logger.warning(f"TradeManager save failed: {e}")
             
@@ -508,22 +528,142 @@ class TradingBot:
                     take_profit=pos.get("take_profit_2", 0)
                 )
                 
-                # Also save to JSON
-                if TradeManager:
+                # Also save to SQLite TradeManager
+                if self.trade_manager:
                     try:
-                        tm = TradeManager()
-                        side = "buy" if pos["direction"] == "LONG" else "sell"
-                        tm.close_trade(
-                            trade_id=str(pos.get("id", idx+1)),
+                        trade_id = pos.get("trade_id", f"trade_{idx+1}")
+                        self.trade_manager.close_trade(
+                            trade_id=trade_id,
                             close_price=current_price,
-                            close_time=datetime.now().isoformat(),
                             close_reason=reason,
-                            pnl=pnl
+                            fees=0
                         )
                     except Exception as e:
                         logger.warning(f"TradeManager close failed: {e}")
                 
                 logger.info(f"Trade closed: {reason} | PnL: ${pnl:.2f} | Exit: ${current_price}")
+    
+    def _load_open_trades_from_db(self):
+        """Load open trades from database on startup"""
+        if not self.trade_manager:
+            return
+        
+        try:
+            open_trades = self.trade_manager.get_all_open_trades()
+            logger.info(f"Loaded {len(open_trades)} open trades from database")
+            
+            # Reconstruct open_positions for bot logic
+            for t in open_trades:
+                side = t.get("side", "sell")
+                direction = "LONG" if side in ["buy", "long"] else "SHORT"
+                
+                self.open_positions.append({
+                    "direction": direction,
+                    "entry_price": t.get("entry_price", 0),
+                    "size": t.get("size", 0),
+                    "leverage": t.get("leverage", 1),
+                    "stop_loss": t.get("sl", 0),
+                    "take_profit_1": t.get("tp", 0),
+                    "take_profit_2": t.get("tp", 0),
+                    "setup": t.get("trade_id", ""),
+                    "opened_at": t.get("open_time", ""),
+                    "trade_id": t.get("trade_id", "")
+                })
+        except Exception as e:
+            logger.warning(f"Failed to load open trades: {e}")
+    
+    def _start_background_sync(self):
+        """Start background thread to sync with exchange every 3 seconds"""
+        import threading
+        
+        def sync_loop():
+            while True:
+                try:
+                    self._sync_with_exchange()
+                except Exception as e:
+                    logger.warning(f"Sync error: {e}")
+                
+                time.sleep(3)
+        
+        if not config.DRY_RUN:
+            thread = threading.Thread(target=sync_loop, daemon=True)
+            thread.start()
+            logger.info("Background sync thread started")
+    
+    def _sync_with_exchange(self):
+        """Sync trades with exchange - detect manual closes"""
+        if not self.trade_manager:
+            return
+        
+        try:
+            # Get current open positions from exchange
+            exchange_positions = self.client.get_positions()
+            current_price = self.client.get_market_data().get("last_price", 0)
+            
+            if not exchange_positions:
+                return
+            
+            # Get database open trades
+            db_trades = self.trade_manager.get_all_open_trades()
+            
+            for trade in db_trades:
+                trade_id = trade.get("trade_id", "")
+                entry = trade.get("entry_price", 0)
+                side = trade.get("side", "sell")
+                size = trade.get("size", 0)
+                leverage = trade.get("leverage", 1)
+                
+                # Check if trade still exists on exchange
+                still_open = False
+                for pos in exchange_positions:
+                    if abs(float(pos.get("entry_price", 0)) - entry) < 10:
+                        still_open = True
+                        break
+                
+                # If not on exchange but in DB as open = manually closed
+                if not still_open:
+                    logger.info(f"Detected manual close for trade {trade_id}")
+                    
+                    # Calculate PnL
+                    if side in ["buy", "long"]:
+                        pnl = (current_price - entry) * size * leverage
+                    else:
+                        pnl = (entry - current_price) * size * leverage
+                    
+                    # Close in database
+                    self.trade_manager.close_trade(trade_id, current_price, "manual", 0)
+                    
+                    # Remove from bot's open_positions
+                    self.open_positions = [p for p in self.open_positions if p.get("trade_id") != trade_id]
+                    
+                    logger.info(f"Trade {trade_id} closed manually | PnL: ${pnl:.2f}")
+            
+            # Check for new trades on exchange not in DB
+            for pos in exchange_positions:
+                entry = float(pos.get("entry_price", 0))
+                
+                # Check if this position is in DB
+                found = any(abs(t.get("entry_price", 0) - entry) < 10 for t in db_trades)
+                
+                if not found:
+                    # New trade opened before bot restart - recover it
+                    logger.info(f"Recovering trade at entry ${entry}")
+                    trade_id = f"recovered_{int(time.time())}"
+                    
+                    self.trade_manager.save_trade({
+                        "trade_id": trade_id,
+                        "symbol": config.SYMBOL,
+                        "side": pos.get("side", "sell"),
+                        "entry_price": entry,
+                        "tp": pos.get("take_profit", 0),
+                        "sl": pos.get("stop_loss", 0),
+                        "size": pos.get("size", 0.001),
+                        "leverage": pos.get("leverage", 1),
+                        "open_time": datetime.now(timezone.utc).isoformat()
+                    })
+        
+        except Exception as e:
+            logger.warning(f"Sync with exchange failed: {e}")
     
     def run(self):
         self.ai_brain.reset_daily()
