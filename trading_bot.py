@@ -44,7 +44,9 @@ def api_stats():
     return jsonify({"total_pnl": total, "win_rate": rate, "open": len(_api_data["open"]), "closed": len(closed)})
 
 def _start_api_server():
-    _api_app.run(host="0.0.0.0", port=5001, debug=False)
+    from werkzeug.serving import make_server
+    server = make_server('0.0.0.0', 5001, _api_app, threaded=True)
+    server.serve_forever()
 
 def update_api_trades():
     """Update API with current trade data"""

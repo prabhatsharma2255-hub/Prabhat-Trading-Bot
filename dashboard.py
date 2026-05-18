@@ -18,7 +18,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Get live price
 def get_live_price():
     try:
         r = requests.get("https://api.india.delta.exchange/v2/tickers/BTCUSD", timeout=2)
@@ -26,20 +25,27 @@ def get_live_price():
     except:
         return 0
 
-# Get trades from bot API
-def get_bot_trades():
-    try:
-        r = requests.get("http://localhost:5001/api/trades", timeout=2)
-        return r.json()
-    except:
-        return {"open": [], "closed": []}
+def get_bot_trades(max_retries=3):
+    for _ in range(max_retries):
+        try:
+            r = requests.get("http://localhost:5001/api/trades", timeout=3)
+            if r.status_code == 200:
+                return r.json()
+        except:
+            pass
+        time.sleep(1)
+    return {"open": [], "closed": []}
 
-def get_bot_stats():
-    try:
-        r = requests.get("http://localhost:5001/api/stats", timeout=2)
-        return r.json()
-    except:
-        return {"total_pnl": 0, "win_rate": 0, "open": 0, "closed": 0}
+def get_bot_stats(max_retries=3):
+    for _ in range(max_retries):
+        try:
+            r = requests.get("http://localhost:5001/api/stats", timeout=3)
+            if r.status_code == 200:
+                return r.json()
+        except:
+            pass
+        time.sleep(1)
+    return {"total_pnl": 0, "win_rate": 0, "open": 0, "closed": 0}
 
 live_price = get_live_price()
 trades = get_bot_trades()
@@ -75,7 +81,7 @@ if open_trades:
         
         st.markdown(f"{emoji} **{side.upper()}** | Entry: ${entry:,.0f} | Mark: ${live_price:,.0f} | <span style='color:{color}'>PnL: ${pnl:.2f} ({pnl_pct:.1f}%)</span> | Size: {size:.4f} | Lev: {lev}x | TP: ${t.get('tp',0):,.0f} | SL: ${t.get('sl',0):,.0f}", unsafe_allow_html=True)
 else:
-    st.info("No open positions")
+    st.info("No open positions - Bot might still starting...")
 
 st.divider()
 
@@ -89,7 +95,7 @@ if closed_trades:
 else:
     st.info("No closed trades")
 
-st.caption(f"Updated: {datetime.now(IST).strftime('%d/%m %H:%M:%S')} IST | Auto-refresh: 3s | Data from bot API")
+st.caption(f"Updated: {datetime.now(IST).strftime('%d/%m %H:%M:%S')} IST | Auto-refresh: 3s")
 
 time.sleep(3)
 st.rerun()
