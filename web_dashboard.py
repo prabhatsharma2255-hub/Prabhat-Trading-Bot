@@ -138,7 +138,7 @@ def get_stats():
     }
 
 
-@app.route('/close/<int:trade_id>', methods=['POST'])
+@app.route('/close/<int:trade_id>')
 def close_trade(trade_id):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -146,7 +146,8 @@ def close_trade(trade_id):
     trade = c.fetchone()
     
     if not trade:
-        return jsonify({"success": False, "message": "Trade not found"})
+        conn.close()
+        return f"Trade not found. <a href='/'>Go Back</a>"
     
     current_price = get_current_price()
     direction = trade[3]
@@ -165,7 +166,7 @@ def close_trade(trade_id):
     conn.commit()
     conn.close()
     
-    return jsonify({"success": True, "message": f"Trade closed. PnL: ${pnl:.2f}"})
+    return f"<script>alert('Trade closed. PnL: ${pnl:.2f}'); window.location='/';</script>"
 
 
 HTML = """
@@ -226,7 +227,7 @@ HTML = """
                 <td>${{ "%.0f"|format(t.notional) }}</td>
                 <td class="{{ 'green' if t.current_pnl > 0 else 'red' }}">${{ "%.2f"|format(t.current_pnl) }}</td>
                 <td>{{ t.grade }}</td>
-                <td><button class="btn" onclick="closeTrade({{ t.id }})">CLOSE</button></td>
+                <td><a href="/close/{{ t.id }}" class="btn">CLOSE</a></td>
             </tr>
             {% else %}
             <tr><td colspan="11" class="empty">No open positions</td></tr>
