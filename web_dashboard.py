@@ -128,6 +128,16 @@ def get_stats():
     c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE pnl_usd > 0")
     wins, win_count = c.fetchone()
     
+    # Closed trades breakdown
+    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_entry) = date('now')")
+    today_closed_pnl, today_closed_count = c.fetchone()
+    
+    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_entry) = date('now', '-1 day')")
+    yesterday_closed_pnl, yesterday_closed_count = c.fetchone()
+    
+    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_entry) < date('now', '-1 day')")
+    history_closed_pnl, history_closed_count = c.fetchone()
+    
     # Get open trades properly
     c.execute("SELECT direction, entry_price, size, leverage FROM trades WHERE status = 'open'")
     open_trades = c.fetchall()
@@ -157,7 +167,13 @@ def get_stats():
         "win_rate": (win_count/total_trades*100) if total_trades and total_trades > 0 else 0,
         "open_positions": len(open_trades),
         "current_price": current_price,
-        "unrealized_pnl": unrealized_pnl
+        "unrealized_pnl": unrealized_pnl,
+        "today_closed_pnl": today_closed_pnl or 0,
+        "today_closed_count": today_closed_count or 0,
+        "yesterday_closed_pnl": yesterday_closed_pnl or 0,
+        "yesterday_closed_count": yesterday_closed_count or 0,
+        "history_closed_pnl": history_closed_pnl or 0,
+        "history_closed_count": history_closed_count or 0
     }
 
 
@@ -270,10 +286,10 @@ HTML = """
             {% endfor %}
         </table>
         
-        <h2>Closed Trades</h2>
+        <h2>Today's Closed Trades ({{ closed.today|length }}) - PnL: ${{ "%.2f"|format(stats.today_closed_pnl) }}</h2>
         <table>
             <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Setup</th><th>Time</th></tr>
-            {% for t in trades if t.status == 'closed' %}
+            {% for t in closed.today %}
             <tr>
                 <td class="{{ 'long' if t.direction == 'LONG' else 'short' }}">{{ t.direction }}</td>
                 <td>${{ "%.0f"|format(t.entry_price) }}</td>
@@ -282,12 +298,52 @@ HTML = """
                 <td class="{{ 'green' if t.pnl_usd > 0 else 'red' }}">${{ "%.2f"|format(t.pnl_usd) }}</td>
                 <td>{{ t.outcome }}</td>
                 <td>{{ t.grade }}</td>
-                <td>{{ t.timestamp_exit[:10] if t.timestamp_exit else '' }}</td>
+                <td>{{ t.timestamp_exit[:16] if t.timestamp_exit else '' }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="8" class="empty">No closed trades</td></tr>
+            <tr><td colspan="8" class="empty">No trades today</td></tr>
             {% endfor %}
         </table>
+        
+        <h2>Yesterday's Closed Trades ({{ closed.yesterday|length }}) - PnL: ${{ "%.2f"|format(stats.yesterday_closed_pnl) }}</h2>
+        <table>
+            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Setup</th><th>Time</th></tr>
+            {% for t in closed.yesterday %}
+            <tr>
+                <td class="{{ 'long' if t.direction == 'LONG' else 'short' }}">{{ t.direction }}</td>
+                <td>${{ "%.0f"|format(t.entry_price) }}</td>
+                <td>${{ "%.0f"|format(t.exit_price) }}</td>
+                <td>{{ "%.4f"|format(t.size) }}</td>
+                <td class="{{ 'green' if t.pnl_usd > 0 else 'red' }}">${{ "%.2f"|format(t.pnl_usd) }}</td>
+                <td>{{ t.outcome }}</td>
+                <td>{{ t.grade }}</td>
+                <td>{{ t.timestamp_exit[:16] if t.timestamp_exit else '' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="empty">No trades yesterday</td></tr>
+            {% endfor %}
+        </table>
+        
+        <h2>Historical Closed Trades ({{ closed.history|length }}) - PnL: ${{ "%.2f"|format(stats.history_closed_pnl) }}</h2>
+        <table>
+            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Setup</th><th>Time</th></tr>
+            {% for t in closed.history %}
+            <tr>
+                <td class="{{ 'long' if t.direction == 'LONG' else 'short' }}">{{ t.direction }}</td>
+                <td>${{ "%.0f"|format(t.entry_price) }}</td>
+                <td>${{ "%.0f"|format(t.exit_price) }}</td>
+                <td>{{ "%.4f"|format(t.size) }}</td>
+                <td class="{{ 'green' if t.pnl_usd > 0 else 'red' }}">${{ "%.2f"|format(t.pnl_usd) }}</td>
+                <td>{{ t.outcome }}</td>
+                <td>{{ t.grade }}</td>
+                <td>{{ t.timestamp_exit[:16] if t.timestamp_exit else '' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="empty">No historical trades</td></tr>
+            {% endfor %}
+        </table>
+        
+        <h2>All Closed Trades - Total PnL: ${{ "%.2f"|format(stats.today_closed_pnl + stats.yesterday_closed_pnl + stats.history_closed_pnl) }}</h2>
         
         <p style="text-align:center; color:#555; margin-top:20px;">{{ last_update }}</p>
     </div>
@@ -296,9 +352,38 @@ HTML = """
 """
 
 
+def get_closed_trades():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    
+    # Today's closed trades
+    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_entry) = date('now') ORDER BY id DESC")
+    today_cols = [desc[0] for desc in c.description]
+    today_trades = [dict(zip(today_cols, row)) for row in c.fetchall()]
+    
+    # Yesterday's closed trades
+    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_entry) = date('now', '-1 day') ORDER BY id DESC")
+    yesterday_cols = [desc[0] for desc in c.description]
+    yesterday_trades = [dict(zip(yesterday_cols, row)) for row in c.fetchall()]
+    
+    # History closed trades
+    c.execute("SELECT * FROM trades WHERE status = 'closed' AND date(timestamp_entry) < date('now', '-1 day') ORDER BY id DESC")
+    history_cols = [desc[0] for desc in c.description]
+    history_trades = [dict(zip(history_cols, row)) for row in c.fetchall()]
+    
+    conn.close()
+    
+    return {
+        "today": today_trades,
+        "yesterday": yesterday_trades,
+        "history": history_trades
+    }
+
+
 @app.route('/')
 def index():
-    return render_template_string(HTML, stats=get_stats(), trades=get_trades(), last_update=get_indian_time(), request=request)
+    closed = get_closed_trades()
+    return render_template_string(HTML, stats=get_stats(), trades=get_trades(), closed=closed, last_update=get_indian_time(), request=request)
 
 
 if __name__ == '__main__':
