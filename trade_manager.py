@@ -14,41 +14,42 @@ DB_FILE = "trades.db"
 class TradeManager:
     def __init__(self, db_path: str = DB_FILE):
         self.db_path = db_path
-        self._init_db()
+        # Don't recreate - just add missing columns to existing
+        self._add_missing_columns()
         self.migrate_from_json()
         self.migrate_from_old_db()
     
-    def _init_db(self):
-        """Initialize SQLite database with trades table"""
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS trades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            trade_id TEXT UNIQUE NOT NULL,
-            symbol TEXT NOT NULL,
-            side TEXT NOT NULL,
-            entry_price REAL NOT NULL,
-            close_price REAL,
-            tp REAL,
-            sl REAL,
-            size REAL NOT NULL,
-            leverage INTEGER DEFAULT 1,
-            margin_used REAL,
-            pnl REAL,
-            pnl_percent REAL,
-            status TEXT DEFAULT 'open',
-            close_reason TEXT,
-            open_time TEXT NOT NULL,
-            close_time TEXT,
-            exchange TEXT DEFAULT 'delta',
-            fees REAL DEFAULT 0,
-            net_pnl REAL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )''')
-        
-        conn.commit()
-        conn.close()
+    def _add_missing_columns(self):
+        """Add missing columns to existing database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            c = conn.cursor()
+            
+            # Add trade_id if missing
+            try:
+                c.execute("ALTER TABLE trades ADD COLUMN trade_id TEXT UNIQUE")
+            except:
+                pass
+            
+            # Add other columns
+            for col, dtype in [
+                ("side", "TEXT"),
+                ("margin_used", "REAL"),
+                ("pnl_percent", "REAL"),
+                ("close_reason", "TEXT"),
+                ("exchange", "TEXT DEFAULT 'delta'"),
+                ("fees", "REAL DEFAULT 0"),
+                ("net_pnl", "REAL")
+            ]:
+                try:
+                    c.execute(f"ALTER TABLE trades ADD COLUMN {col} {dtype}")
+                except:
+                    pass
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"Column add error: {e}")
     
     def migrate_from_json(self):
         """Import trades from trades.json if exists"""
@@ -90,8 +91,18 @@ class TradeManager:
             old_conn = sqlite3.connect(old_db)
             old_c = old_conn.cursor()
             
-            # Get all trades from old DB
-            old_c.execute("SELECT id, direction, entry_price, exit_price, pnl_usd, status, signals_fired, stop_loss, take_profit, size, leverage, timestamp_entry, timestamp_exit, outcome FROM trades")
+            # Get all trades from old DB - check columns first
+            old_c.execute("PRAGMA table_info(trades)")
+            cols = [row[1] for row in old_c.fetchall()]
+            print(f"Old DB columns: {cols}")
+            
+            # Build dynamic query based on available columns
+            needed_cols = ['id', 'direction', 'entry_price', 'exit_price', 'pnl_usd', 'status', 
+                          'signals_fired', 'stop_loss', 'take_profit', 'size', 'leverage', 
+                          'timestamp_entry', 'timestamp_exit', 'outcome']
+            
+            select_cols = [c for c in needed_cols if c in cols]
+            old_c.execute(f"SELECT {','.join(select_cols)} FROM trades")
             
             conn = sqlite3.connect(self.db_path)
             c = conn.cursor()
@@ -101,20 +112,22 @@ class TradeManager:
                 if self._trade_id_exists(trade_id):
                     continue
                 
-                direction = row[1] or "SHORT"
+                # Map available columns
+                data = dict(zip(select_cols, row))
+                
+                direction = data.get('direction', 'SHORT')
                 side = "buy" if direction == "LONG" else "sell"
-                entry = float(row[2] or 0)
-                exit_p = row[3]
-                pnl = float(row[4] or 0) if row[4] else None
-                status = row[5] or "closed"
-                setup = row[6] or "unknown"
-                sl = float(row[7] or 0)
-                tp = float(row[8] or 0)
-                size = float(row[9] or 0.001) * float(row[10] or 1)
-                lev = int(row[10] or 1)
-                open_time = row[11]
-                close_time = row[12]
-                close_reason = row[13]
+                entry = float(data.get('entry_price', 0) or 0)
+                exit_p = data.get('exit_price')
+                pnl = float(data.get('pnl_usd', 0) or 0) if data.get('pnl_usd') else None
+                status = data.get('status', 'closed')
+                sl = float(data.get('stop_loss', 0) or 0)
+                tp = float(data.get('take_profit', 0) or 0)
+                size = float(data.get('size', 0.001) or 0.001)
+                lev = int(data.get('leverage', 1) or 1)
+                open_time = data.get('timestamp_entry')
+                close_time = data.get('timestamp_exit')
+                close_reason = data.get('outcome')
                 
                 margin = size * entry / lev if lev > 0 else size * entry
                 
@@ -265,23 +278,37 @@ class TradeManager:
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
         
+        # Check which column exists for PnL
+        c.execute("PRAGMA table_info(trades)")
+        cols = [row[1] for row in c.fetchall()]
+        pnl_col = "pnl" if "pnl" in cols else "pnl_usd"
+        fees_col = "fees" if "fees" in cols else "0"
+        
         # Closed trades stats
-        c.execute("SELECT COUNT(*), SUM(pnl), SUM(fees), SUM(net_pnl) FROM trades WHERE status = 'closed'")
-        total_count, total_pnl, total_fees, net_pnl = c.fetchone()
-        total_count = total_count or 0
-        total_pnl = total_pnl or 0
-        total_fees = total_fees or 0
-        net_pnl = net_pnl or 0
+        try:
+            c.execute(f"SELECT COUNT(*), SUM({pnl_col}), SUM({fees_col}) FROM trades WHERE status = 'closed'")
+            result = c.fetchone()
+            total_count = result[0] or 0
+            total_pnl = result[1] or 0
+            total_fees = result[2] or 0
+        except:
+            total_count, total_pnl, total_fees = 0, 0, 0
         
         # Wins
-        c.execute("SELECT COUNT(*) FROM trades WHERE status = 'closed' AND pnl > 0")
-        wins = c.fetchone()[0] or 0
+        try:
+            c.execute(f"SELECT COUNT(*) FROM trades WHERE status = 'closed' AND {pnl_col} > 0")
+            wins = c.fetchone()[0] or 0
+        except:
+            wins = 0
         
         # Best/worst trade
-        c.execute("SELECT MAX(pnl), MIN(pnl) FROM trades WHERE status = 'closed'")
-        best, worst = c.fetchone()
-        best = best or 0
-        worst = worst or 0
+        try:
+            c.execute(f"SELECT MAX({pnl_col}), MIN({pnl_col}) FROM trades WHERE status = 'closed'")
+            result = c.fetchone()
+            best = result[0] or 0
+            worst = result[1] or 0
+        except:
+            best, worst = 0, 0
         
         # Win rate
         win_rate = (wins / total_count * 100) if total_count > 0 else 0
@@ -290,15 +317,18 @@ class TradeManager:
         avg_trade = total_pnl / total_count if total_count > 0 else 0
         
         # Open positions
-        c.execute("SELECT COUNT(*) FROM trades WHERE status = 'open'")
-        open_count = c.fetchone()[0] or 0
+        try:
+            c.execute("SELECT COUNT(*) FROM trades WHERE status = 'open'")
+            open_count = c.fetchone()[0] or 0
+        except:
+            open_count = 0
         
         conn.close()
         
         return {
             "total_trades": total_count,
             "total_pnl": round(total_pnl, 2),
-            "net_pnl": round(net_pnl, 2),
+            "net_pnl": round(total_pnl - total_fees, 2),
             "total_fees": round(total_fees, 2),
             "wins": wins,
             "win_rate": round(win_rate, 2),
