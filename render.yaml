@@ -1,0 +1,13 @@
+services:
+  - type: worker
+    name: trading-bot
+    startCommand: python run.py
+
+  - type: web
+    name: trading-dashboard
+    startCommand: streamlit run dashboard.py 
+      --server.port $PORT 
+      --server.address 0.0.0.0
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"

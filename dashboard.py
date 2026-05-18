@@ -1,285 +1,220 @@
 """
-Trading Dashboard - SQLite-based trade logging and analytics
-
-Tables:
-- trades: Full trade history with all details
-- bot_state: Current bot state snapshots
-- signal_log: Every cycle's signals and decisions
+Professional Binance-style Trading Dashboard
+Streamlit version with real-time updates
 """
+import streamlit as st
+import pandas as pd
+import time
+from datetime import datetime, timezone, timedelta
+import os
+import sys
 
-import sqlite3
-import json
-from datetime import datetime, date
-from typing import Dict, List, Optional
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-DB_FILE = "trades.db"
+from trade_manager import TradeManager
+import requests
 
+# Page config
+st.set_page_config(
+    page_title="Delta Trading Bot",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-def init_db():
-    """Initialize database with full schema."""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    
-    # Create tables if not exist
-    c.execute('''CREATE TABLE IF NOT EXISTS trades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp_entry TEXT,
-        timestamp_exit TEXT,
-        symbol TEXT,
-        direction TEXT,
-        regime TEXT,
-        module_used TEXT,
-        grade TEXT,
-        entry_price REAL,
-        exit_price REAL,
-        size REAL,
-        leverage REAL,
-        stop_loss REAL,
-        take_profit REAL,
-        pnl_usd REAL,
-        status TEXT DEFAULT 'closed',
-        signals_fired TEXT,
-        htf_aligned INTEGER,
-        session TEXT,
-        outcome TEXT
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS bot_state (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT,
-        balance REAL,
-        peak_balance REAL,
-        current_drawdown_pct REAL,
-        trades_today INTEGER,
-        consecutive_losses INTEGER,
-        regime TEXT,
-        session TEXT,
-        last_signal_time TEXT,
-        open_positions INTEGER,
-        review_mode INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS signal_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp TEXT,
-        regime_detected TEXT,
-        module_triggered TEXT,
-        signals_fired TEXT,
-        signal_count INTEGER,
-        trade_taken INTEGER,
-        reason_skipped TEXT,
-        htf_aligned INTEGER,
-        htf_status TEXT,
-        grade TEXT,
-        direction TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )''')
-    
-    # Add missing columns if they don't exist (migration)
+# Auto-refresh every 3 seconds
+st_autorefresh = st.empty()
+if 'count' not in st.session_state:
+    st.session_state.count = 0
+st.session_state.count += 1
+if st.session_state.count % 1 == 0:
+    time.sleep(3)
+    st.rerun()
+
+def get_current_price():
     try:
-        c.execute("ALTER TABLE trades ADD COLUMN mode INTEGER DEFAULT 1")
+        r = requests.get("https://api.india.delta.exchange/v2/tickers/BTCUSD", timeout=2)
+        data = r.json()
+        if data and "result" in data:
+            return float(data["result"].get("close", 0))
     except:
         pass
-    
+    return 0
+
+def format_duration(open_time: str) -> str:
+    """Format duration in human readable format"""
     try:
-        c.execute("ALTER TABLE trades ADD COLUMN session TEXT")
+        if not open_time:
+            return "N/A"
+        open_dt = datetime.fromisoformat(open_time.replace('Z', '+00:00'))
+        now = datetime.now(timezone.utc)
+        delta = now - open_dt
+        
+        hours = delta.total_seconds() // 3600
+        minutes = (delta.total_seconds() % 3600) // 60
+        
+        if hours > 24:
+            days = int(hours // 24)
+            return f"{days}d {int(hours%24)}h"
+        return f"{int(hours)}h {int(minutes)}m"
     except:
-        pass
-    
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN htf_aligned INTEGER DEFAULT 0")
-    except:
-        pass
-    
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN status TEXT DEFAULT 'closed'")
-    except:
-        pass
-    
-    conn.commit()
-    conn.close()
+        return "N/A"
 
-
-def log_trade(direction: str, entry_price: float, exit_price: float, 
-              size: float, pnl: float, status: str, confidence: float = 80,
-              regime: str = "", signals: str = "", htf_aligned: bool = False,
-              session: str = "", grade: str = "", module: str = "",
-              outcome: str = "", leverage: int = 1, stop_loss: float = 0, take_profit: float = 0):
-    """Log a trade to database."""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    
-    # Add missing columns
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN leverage REAL DEFAULT 1")
-    except:
-        pass
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN stop_loss REAL DEFAULT 0")
-    except:
-        pass
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN take_profit REAL DEFAULT 0")
-    except:
-        pass
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN confidence REAL DEFAULT 80")
-    except:
-        pass
-    try:
-        c.execute("ALTER TABLE trades ADD COLUMN status TEXT DEFAULT 'closed'")
-    except:
-        pass
-    
-    timestamp = datetime.now().isoformat()
-    
-    if status == "open":
-        try:
-            cols = "timestamp_entry, symbol, direction, regime, grade, module_used, entry_price, size, pnl_usd, status, signals_fired, htf_aligned, session, leverage, stop_loss, take_profit"
-            vals = (timestamp, "BTCUSD", direction, regime or "neutral", grade or module or "unknown", module or grade or "unknown", 
-                    float(entry_price), float(size), float(pnl or 0), status, 
-                    signals or "", int(htf_aligned or 0), session or "unknown", 
-                    int(leverage or 1), float(stop_loss or 0), float(take_profit or 0))
-            c.execute(f"INSERT INTO trades ({cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", vals)
-            print(f"LOGGED: Open trade {direction} {entry_price} {size}")
-        except Exception as e:
-            print(f"INSERT ERROR: {e}")
-    
-    elif status == "closed":
-        try:
-            c.execute("UPDATE trades SET timestamp_exit=?, exit_price=?, pnl_usd=?, status=?, outcome=? WHERE id=(SELECT id FROM trades WHERE status='open' ORDER BY id DESC LIMIT 1)",
-                (timestamp, float(exit_price or 0), float(pnl or 0), status, outcome or "closed"))
-            print(f"LOGGED: Closed trade exit={exit_price} pnl={pnl}")
-        except Exception as e:
-            print(f"CLOSE ERROR: {e}")
-    
-    conn.commit()
-    conn.close()
-
-
-def log_signal_log(regime: str, module: str, signals: List[str], 
-                   trade_taken: bool, reason_skipped: str = "",
-                   htf_aligned: bool = False, htf_status: str = "",
-                   grade: str = "", direction: str = "NONE"):
-    """Log signal analysis for each cycle."""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    
-    c.execute('''INSERT INTO signal_log 
-        (timestamp, regime_detected, module_triggered, signals_fired, signal_count,
-         trade_taken, reason_skipped, htf_aligned, htf_status, grade, direction)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-        (datetime.now().isoformat(), regime, module, json.dumps(signals), len(signals),
-         1 if trade_taken else 0, reason_skipped, 1 if htf_aligned else 0, 
-         htf_status, grade, direction))
-    
-    conn.commit()
-    conn.close()
-
-
-def log_bot_state(balance: float, peak_balance: float, drawdown_pct: float,
-                  trades_today: int, consecutive_losses: int, regime: str,
-                  session: str, open_positions: int, review_mode: bool):
-    """Log current bot state."""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    
-    c.execute('''INSERT INTO bot_state 
-        (timestamp, balance, peak_balance, current_drawdown_pct, trades_today,
-         consecutive_losses, regime, session, open_positions, review_mode)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-        (datetime.now().isoformat(), balance, peak_balance, drawdown_pct,
-         trades_today, consecutive_losses, regime, session, open_positions,
-         1 if review_mode else 0))
-    
-    conn.commit()
-    conn.close()
-
-
-def get_daily_stats() -> Dict:
-    """Get today's trading statistics."""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    today = date.today().isoformat()
-
-    c.execute("SELECT COUNT(*), SUM(pnl_usd) FROM trades WHERE date(timestamp_entry) = ?", (today,))
-    count, pnl = c.fetchone()
-
-    c.execute("SELECT COUNT(*), SUM(pnl_usd) FROM trades WHERE date(timestamp_entry) = ? AND pnl_usd > 0", (today,))
-    wins, win_pnl = c.fetchone()
-
-    c.execute("SELECT COUNT(*), SUM(pnl_usd) FROM trades WHERE date(timestamp_entry) = ? AND pnl_usd < 0", (today,))
-    losses, loss_pnl = c.fetchone()
-
-    conn.close()
-
-    return {
-        "total_trades": count or 0,
-        "total_pnl": pnl or 0,
-        "wins": wins or 0,
-        "losses": losses or 0,
-        "win_pnl": win_pnl or 0,
-        "loss_pnl": loss_pnl or 0,
-        "win_rate": (wins / count * 100) if count and count > 0 else 0
+def get_close_reason_badge(reason: str) -> str:
+    """Get badge emoji for close reason"""
+    badges = {
+        "tp": "🎯 TP Hit",
+        "TP": "🎯 TP Hit",
+        "sl": "🛑 SL Hit",
+        "SL": "🛑 SL Hit",
+        "manual": "✋ Manual",
+        "MANUAL": "✋ Manual",
+        "MANUAL_CLOSE": "✋ Manual",
+        "liquidated": "⚠️ Liquidated",
+        "LIQUIDATED": "⚠️ Liquidated"
     }
+    return badges.get(reason, reason or "N/A")
 
+# Initialize TradeManager
+tm = TradeManager()
+current_price = get_current_price()
 
-def get_all_time_stats() -> Dict:
-    """Get all-time trading statistics."""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
+# Header
+col1, col2, col3 = st.columns([2, 1, 1])
+with col1:
+    st.title("📈 Delta Trading Bot")
+with col2:
+    st.markdown(f"**BTC/USD:** ${current_price:,.2f}")
+with col3:
+    status = "🟢 Running" if current_price > 0 else "🔴 Offline"
+    st.markdown(f"**Status:** {status}")
 
-    c.execute("SELECT COUNT(*), SUM(pnl_usd) FROM trades")
-    count, total_pnl = c.fetchone()
+st.divider()
 
-    c.execute("SELECT COUNT(*), SUM(pnl_usd) FROM trades WHERE pnl_usd > 0")
-    wins, win_pnl = c.fetchone()
+# Stats cards
+stats = tm.get_stats()
 
-    c.execute("SELECT COUNT(*), SUM(pnl_usd) FROM trades WHERE pnl_usd < 0")
-    losses, loss_pnl = c.fetchone()
+col1, col2, col3, col4, col5, col6 = st.columns(6)
+with col1:
+    color = "green" if stats['total_pnl'] >= 0 else "red"
+    st.metric("Total PnL", f"${stats['total_pnl']:.2f}", delta_color=color)
+with col2:
+    st.metric("Win Rate", f"{stats['win_rate']:.1f}%")
+with col3:
+    st.metric("Total Trades", stats['total_trades'])
+with col4:
+    st.metric("Open Positions", stats['open_positions'])
+with col5:
+    st.metric("Best Trade", f"${stats['best_trade']:.2f}")
+with col6:
+    st.metric("Worst Trade", f"${stats['worst_trade']:.2f}")
 
-    conn.close()
+st.divider()
 
-    return {
-        "total_trades": count or 0,
-        "total_pnl": total_pnl or 0,
-        "wins": wins or 0,
-        "losses": losses or 0,
-        "win_pnl": win_pnl or 0,
-        "loss_pnl": loss_pnl or 0,
-        "win_rate": (wins / count * 100) if count and count > 0 else 0
-    }
+# Open Positions
+st.subheader("📊 Open Positions")
+open_trades = tm.get_all_open_trades()
 
+if open_trades:
+    open_data = []
+    for t in open_trades:
+        entry = t.get('entry_price', 0)
+        size = t.get('size', 0)
+        lev = t.get('leverage', 1)
+        side = t.get('side', 'sell')
+        
+        # Calculate unrealized PnL
+        if side in ['buy', 'long']:
+            pnl = (current_price - entry) * size * lev
+        else:
+            pnl = (entry - current_price) * size * lev
+        
+        pnl_pct = (pnl / (entry * size * lev)) * 100 if (entry * size * lev) > 0 else 0
+        
+        open_data.append({
+            "Symbol": t.get('symbol', 'BTCUSD'),
+            "Side": "🟢 LONG" if side in ['buy', 'long'] else "🔴 SHORT",
+            "Size": f"{size:.4f}",
+            "Leverage": f"{lev}x",
+            "Entry": f"${entry:,.0f}",
+            "Mark Price": f"${current_price:,.0f}",
+            "PnL": f"${pnl:.2f}",
+            "PnL %": f"{pnl_pct:.2f}%",
+            "Margin": f"${size * entry / lev:,.0f}",
+            "TP": f"${t.get('tp', 0):,.0f}" if t.get('tp') else "N/A",
+            "SL": f"${t.get('sl', 0):,.0f}" if t.get('sl') else "N/A",
+            "Open Time": format_duration(t.get('open_time'))
+        })
+    
+    df = pd.DataFrame(open_data)
+    
+    # Color styling
+    def color_pnl(val):
+        if 'PnL' in str(val) and '$' in str(val):
+            if '-' in str(val):
+                return 'color: red'
+            return 'color: green'
+        return ''
+    
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True
+    )
+else:
+    st.info("No open positions")
 
-def get_recent_trades(limit: int = 20) -> List:
-    """Get recent trades."""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,))
-    trades = c.fetchall()
-    conn.close()
-    return trades
+st.divider()
 
+# Closed Trades
+st.subheader("📜 Closed Trades History")
+closed_trades = tm.get_all_closed_trades(limit=50)
 
-def get_open_trades() -> List:
-    """Get currently open trades."""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT * FROM trades WHERE status = 'open'")
-    trades = c.fetchall()
-    conn.close()
-    return trades
+if closed_trades:
+    closed_data = []
+    for t in closed_trades:
+        entry = t.get('entry_price', 0)
+        size = t.get('size', 0)
+        lev = t.get('leverage', 1)
+        side = t.get('side', 'sell')
+        pnl = t.get('pnl', 0) or t.get('pnl_usd', 0)
+        entry_usd = entry * size * lev
+        pnl_pct = (pnl / entry_usd * 100) if entry_usd > 0 else 0
+        
+        closed_data.append({
+            "#": t.get('trade_id', t.get('id', '')),
+            "Symbol": t.get('symbol', 'BTCUSD'),
+            "Side": "🟢 LONG" if side in ['buy', 'long'] else "🔴 SHORT",
+            "Size": f"{size:.4f}",
+            "Leverage": f"{lev}x",
+            "Entry": f"${entry:,.0f}",
+            "Close": f"${t.get('close_price', 0):,.0f}" if t.get('close_price') else "N/A",
+            "PnL": f"${pnl:.2f}",
+            "PnL %": f"{pnl_pct:.2f}%",
+            "Reason": get_close_reason_badge(t.get('close_reason', '')),
+            "Duration": format_duration(t.get('open_time')) + " → " + format_duration(t.get('close_time'))
+        })
+    
+    df = pd.DataFrame(closed_data)
+    
+    # Pagination
+    page = st.number_input("Page", min_value=1, value=1, step=1)
+    per_page = 20
+    total_pages = len(df) // per_page + (1 if len(df) % per_page else 0)
+    
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    
+    st.dataframe(
+        df.iloc[start_idx:end_idx],
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    st.caption(f"Showing {start_idx+1}-{min(end_idx, len(df))} of {len(df)} trades | Page {page} of {total_pages}")
+else:
+    st.info("No closed trades yet")
 
-
-def get_signal_log(limit: int = 100) -> List:
-    """Get recent signal logs."""
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT * FROM signal_log ORDER BY id DESC LIMIT ?", (limit,))
-    logs = c.fetchall()
-    conn.close()
-    return logs
-
-
-init_db()
+# Footer
+st.divider()
+st.caption(f"Last updated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC | Auto-refresh: 3s")
