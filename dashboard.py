@@ -2,12 +2,27 @@ import streamlit as st
 from trade_manager import get_open, get_closed
 import pandas as pd
 import time
+from datetime import datetime, timedelta
 
 st.set_page_config(
     page_title="Trading Bot", 
     layout="wide",
     page_icon="📈"
 )
+
+IST = timedelta(hours=5, minutes=30)
+
+def to_ist(ts):
+    if not ts:
+        return "N/A"
+    try:
+        dt = datetime.fromisoformat(str(ts))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        ist = dt.astimezone(IST)
+        return ist.strftime("%d/%m %H:%M IST")
+    except:
+        return str(ts)[:19]
 
 st.markdown("""
 <style>
@@ -36,6 +51,7 @@ st.divider()
 st.subheader("🟢 Open Positions")
 if open_t:
     df = pd.DataFrame(open_t)
+    df['open_time'] = df['open_time'].apply(to_ist)
     st.dataframe(df[[
         'symbol','side','size','entry_price',
         'tp','sl','leverage','open_time'
@@ -50,6 +66,8 @@ if closed:
     df2['pnl'] = df2['pnl'].apply(
         lambda x: f"${x:.2f}" if x else "$0.00"
     )
+    df2['open_time'] = df2['open_time'].apply(to_ist)
+    df2['close_time'] = df2['close_time'].apply(to_ist)
     df2['close_reason'] = df2['close_reason'].map({
         'tp': '🎯 TP Hit',
         'sl': '🛑 SL Hit', 
@@ -63,6 +81,8 @@ if closed:
     ]], use_container_width=True)
 else:
     st.info("No closed trades yet")
+
+st.caption(f"Timezone: IST (UTC+5:30) | Last updated: {datetime.now(IST).strftime('%d/%m %H:%M:%S')} IST")
 
 # Auto refresh
 time.sleep(3)

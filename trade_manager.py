@@ -1,7 +1,12 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 DB = "trades.db"
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def now_ist():
+    return datetime.now(IST)
 
 def init_db():
     conn = sqlite3.connect(DB)
@@ -33,7 +38,7 @@ def save_trade(t):
     (t['id'],t['symbol'],t['side'],t['size'],
      t['entry_price'],None,t['tp'],t['sl'],
      t.get('leverage',1),None,'open',None,
-     str(datetime.utcnow()),None))
+     str(now_ist()),None))
     conn.commit()
     conn.close()
 
@@ -60,7 +65,7 @@ def close_trade(trade_id, close_price, reason):
         close_time=?
         WHERE id=?""",
         (close_price, pnl, reason,
-         str(datetime.utcnow()), trade_id))
+         str(now_ist()), trade_id))
         conn.commit()
     conn.close()
 

@@ -7,7 +7,9 @@ Works with 12 named setups + News Intelligence + Move Detection
 import time
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+IST = timezone(timedelta(hours=5, minutes=30))
 from typing import Dict, Optional, List
 
 import config
@@ -397,7 +399,7 @@ class TradingBot:
             self.open_positions.append(position)
             
             # SAVE TO DATABASE INSTANTLY
-            trade_id = f"trade_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            trade_id = f"trade_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}"
             save_trade({
                 'id': trade_id,
                 'symbol': config.SYMBOL,
@@ -433,7 +435,7 @@ class TradingBot:
             # Also save to SQLite TradeManager for dashboard sync
             if self.trade_manager:
                 try:
-                    trade_id = f"trade_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+                    trade_id = f"trade_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}"
                     side = "buy" if direction == "LONG" else "sell"
                     
                     self.trade_manager.save_trade({
@@ -445,7 +447,7 @@ class TradingBot:
                         "sl": setup.stop_loss,
                         "size": position_size,
                         "leverage": setup.leverage,
-                        "open_time": datetime.now(timezone.utc).isoformat()
+                        "open_time": datetime.now(IST).isoformat()
                     })
                     
                     # Store trade_id in position for later reference
@@ -700,7 +702,7 @@ class TradingBot:
                         "sl": pos.get("stop_loss", 0),
                         "size": pos.get("size", 0.001),
                         "leverage": pos.get("leverage", 1),
-                        "open_time": datetime.now(timezone.utc).isoformat()
+                        "open_time": datetime.now(IST).isoformat()
                     })
         
         except Exception as e:
