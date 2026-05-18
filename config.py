@@ -159,7 +159,7 @@ SESSION_DEAD_END = 2
 # EXECUTION
 # ============================================================
 
-POLLING_INTERVAL = 60
+POLLING_INTERVAL = 10  # Real-time (10 seconds)
 TIMEFRAMES = {
     "entry": "15m",
     "filter": "1h",

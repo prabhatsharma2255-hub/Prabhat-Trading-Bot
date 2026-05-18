@@ -61,8 +61,8 @@ class TradingBot:
         if NewsEngine:
             try:
                 self.news_engine = NewsEngine()
-                self.news_engine.warm_up()
-                logger.info("News Engine initialized and warmed up")
+                # Don't block - warmup in background
+                logger.info("News Engine initialized")
             except Exception as e:
                 logger.warning(f"News Engine init failed: {e}")
         
