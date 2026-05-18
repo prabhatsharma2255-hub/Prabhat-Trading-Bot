@@ -75,9 +75,8 @@ class TradingBot:
     
     def _cleanup_stale_positions(self):
         """Clean up stale open positions in database (DRY_RUN mode)."""
-        import dashboard
         try:
-            conn = sqlite3.connect(dashboard.DB_FILE)
+            conn = sqlite3.connect("trades.db")
             c = conn.cursor()
             c.execute("SELECT COUNT(*) FROM trades WHERE status = 'open'")
             count = c.fetchone()[0]
@@ -217,7 +216,8 @@ class TradingBot:
         state = analysis["state"]
         
         logger.info(f"MARKET STATE")
-        logger.info(f"BTC Price: ${state.current_price:.2f} | ATR: ${state.atr:.2f} ({state.atr/state.current_price*100:.2f}%)")
+        atr_pct = (state.atr/state.current_price*100) if state.current_price > 0 else 0
+        logger.info(f"BTC Price: ${state.current_price:.2f} | ATR: ${state.atr:.2f} ({atr_pct:.2f}%)")
         logger.info(f"Structure: {state.structure.upper()}")
         logger.info(f"RSI: {state.rsi:.1f} | Divergence: {state.rsi_divergence}")
         logger.info(f"MACD: {state.macd_state} | Cross: {state.macd_cross_dir}")
@@ -456,7 +456,15 @@ class TradingBot:
                     status="closed",
                     confidence=0,
                     regime="",
-                    outcome=reason
+                    signals="",
+                    htf_aligned=False,
+                    session="",
+                    grade=pos.get("setup", ""),
+                    module=pos.get("setup", ""),
+                    outcome=reason,
+                    leverage=pos.get("leverage", 1),
+                    stop_loss=pos.get("stop_loss", 0),
+                    take_profit=pos.get("take_profit_2", 0)
                 )
                 
                 logger.info(f"Trade closed: {reason} | PnL: ${pnl:.2f} | Exit: ${current_price}")

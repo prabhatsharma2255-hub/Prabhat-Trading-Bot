@@ -247,7 +247,7 @@ class AIBrain:
         
         # AGGRESSIVE (10-12) - Check these for explosive moves
         # SETUP 10: ROCKET RIDE - priority after news
-        result = self._setup_rocket_ride(state, velocity_data, ltf_candles, state)
+        result = self._setup_rocket_ride(state, velocity_data, ltf_candles, None)
         results.append(result)
         
         # SETUP 11: NEWS SPIKE - highest priority for reactive trading
@@ -1073,12 +1073,14 @@ class AIBrain:
             direction = "LONG" if state.fib_dir == "from_low" else "SHORT"
             price = state.current_price
             
+            fib_levels = state.fib_levels or {}
+            
             if direction == "LONG":
-                sl = state.fib_levels.get(0.786, price * 0.99)
+                sl = fib_levels.get(0.786, price * 0.99)
                 tp1 = state.fib_target_1
                 tp2 = state.fib_target_2
             else:
-                sl = state.fib_levels.get(0.786, price * 1.01)
+                sl = fib_levels.get(0.786, price * 1.01)
                 tp1 = state.fib_target_1
                 tp2 = state.fib_target_2
             

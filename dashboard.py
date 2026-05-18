@@ -131,8 +131,8 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
     timestamp = datetime.now().isoformat()
     
     if status == "open":
-        # First close any existing open positions with same direction
-        c.execute("UPDATE trades SET status = 'closed', outcome = 'REPLACED' WHERE direction = ? AND status = 'open'", (direction,))
+        # First close the MOST RECENT open position with same direction (not ALL)
+        c.execute("UPDATE trades SET status = 'closed', outcome = 'REPLACED' WHERE id = (SELECT id FROM trades WHERE direction = ? AND status = 'open' ORDER BY id DESC LIMIT 1)", (direction,))
         
         c.execute('''INSERT INTO trades 
             (timestamp_entry, symbol, direction, regime, grade, module_used, 
