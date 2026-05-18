@@ -136,18 +136,18 @@ def close_trade(trade_id):
     try:
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT * FROM trades WHERE id = ? AND status = 'open'", (trade_id,))
+        c.execute("SELECT id, direction, entry_price, size, leverage FROM trades WHERE id = ? AND status = 'open'", (trade_id,))
         trade = c.fetchone()
         
         if not trade:
             conn.close()
             return redirect('/?error=not_found')
         
+        trade_id, direction, entry, size, leverage = trade
+        entry = float(entry or 0)
+        size = float(size or 0)
+        leverage = float(leverage or 1)
         current_price = get_current_price()
-        direction = trade[3]
-        entry = float(trade[7])
-        size = float(trade[9])
-        leverage = float(trade[10] or 1)
         
         if direction == "LONG":
             pnl = (current_price - entry) * size * leverage
