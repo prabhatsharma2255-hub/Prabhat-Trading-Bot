@@ -14,7 +14,7 @@ SYMBOL = "BTCUSD"
 
 # Account
 STARTING_CAPITAL = 100.0
-DRY_RUN = False  # LIVE TRADING
+DRY_RUN = True  # TEST MODE
 MIN_POSITION_USD = 10.0  # Minimum $10 position to execute
 
 # ============================================================
