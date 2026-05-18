@@ -435,7 +435,10 @@ class TradingBot:
                 
                 logger.info(f"CLOSING: {direction} Entry={entry} Exit={current_price} Lev={leverage} PnL=${pnl}")
                 
-                close_result = self.client.close_position(pos["direction"], pos["size"])
+                if not config.DRY_RUN:
+                    close_result = self.client.close_position(pos["direction"], pos["size"])
+                else:
+                    logger.info("[DRY RUN] Would close position")
                 
                 self.balance += pnl
                 

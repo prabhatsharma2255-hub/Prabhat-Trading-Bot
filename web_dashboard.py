@@ -48,6 +48,24 @@ def get_trades(limit=50):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
+    # Add missing columns
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN status TEXT DEFAULT 'closed'")
+    except:
+        pass
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN leverage REAL DEFAULT 1")
+    except:
+        pass
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN stop_loss REAL DEFAULT 0")
+    except:
+        pass
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN take_profit REAL DEFAULT 0")
+    except:
+        pass
+    
     c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,))
     cols = [desc[0] for desc in c.description]
     trades = []
@@ -55,14 +73,16 @@ def get_trades(limit=50):
         trade = dict(zip(cols, row))
         
         try:
-            trade["entry_price"] = float(trade.get("entry_price", 0) or 0)
-            trade["exit_price"] = float(trade.get("exit_price", 0) or 0)
-            trade["size"] = float(trade.get("size", 0) or 0)
-            trade["leverage"] = float(trade.get("leverage", 1) or 1)
-            trade["stop_loss"] = float(trade.get("stop_loss", 0) or 0)
-            trade["take_profit"] = float(trade.get("take_profit", 0) or 0)
+            trade["entry_price"] = float(trade.get("entry_price") or 0)
+            trade["exit_price"] = float(trade.get("exit_price") or 0)
+            trade["size"] = float(trade.get("size") or 0)
+            trade["leverage"] = float(trade.get("leverage") or 1)
+            trade["stop_loss"] = float(trade.get("stop_loss") or 0)
+            trade["take_profit"] = float(trade.get("take_profit") or 0)
+            trade["pnl_usd"] = float(trade.get("pnl_usd") or 0)
+            trade["status"] = trade.get("status") or "closed"
             
-            if trade.get("status") == "open" and current_price > 0:
+            if trade["status"] == "open" and current_price > 0:
                 leverage = trade["leverage"]
                 entry = trade["entry_price"]
                 size = trade["size"]
@@ -73,13 +93,14 @@ def get_trades(limit=50):
                 trade["current_price"] = current_price
                 trade["notional"] = entry * size * leverage
             else:
-                trade["current_pnl"] = float(trade.get("pnl_usd", 0))
-                trade["current_price"] = trade.get("exit_price", 0)
+                trade["current_pnl"] = trade["pnl_usd"]
+                trade["current_price"] = trade.get("exit_price") or 0
                 trade["notional"] = trade["entry_price"] * trade["size"] * trade["leverage"]
         except Exception as e:
             trade["current_pnl"] = 0
             trade["current_price"] = 0
             trade["notional"] = 0
+            trade["status"] = "closed"
         trades.append(trade)
     conn.close()
     return trades
@@ -90,6 +111,12 @@ def get_stats():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
+    # Ensure status column exists
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN status TEXT DEFAULT 'closed'")
+    except:
+        pass
+    
     c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed'")
     total_pnl, total_trades = c.fetchone()
     
@@ -99,16 +126,17 @@ def get_stats():
     c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE pnl_usd > 0 AND status = 'closed'")
     wins, win_count = c.fetchone()
     
-    c.execute("SELECT * FROM trades WHERE status = 'open'")
+    # Get open trades properly
+    c.execute("SELECT direction, entry_price, size, leverage FROM trades WHERE status = 'open'")
     open_trades = c.fetchall()
     
     unrealized_pnl = 0
     for trade in open_trades:
         try:
-            direction = trade[3]
-            entry = float(trade[7])
-            size = float(trade[9])
-            leverage = float(trade[10] or 1)
+            direction, entry, size, leverage = trade
+            entry = float(entry or 0)
+            size = float(size or 0)
+            leverage = float(leverage or 1)
             if direction == "LONG":
                 pnl = (current_price - entry) * size * leverage
             else:
@@ -136,14 +164,16 @@ def close_trade(trade_id):
     try:
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT id, direction, entry_price, size, leverage FROM trades WHERE id = ? AND status = 'open'", (trade_id,))
-        trade = c.fetchone()
         
-        if not trade:
+        # Get trade details
+        c.execute("SELECT direction, entry_price, size, leverage FROM trades WHERE id = ? AND status = 'open'", (trade_id,))
+        row = c.fetchone()
+        
+        if not row:
             conn.close()
             return redirect('/?error=not_found')
         
-        trade_id, direction, entry, size, leverage = trade
+        direction, entry, size, leverage = row
         entry = float(entry or 0)
         size = float(size or 0)
         leverage = float(leverage or 1)

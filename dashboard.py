@@ -30,21 +30,18 @@ def init_db():
         regime TEXT,
         module_used TEXT,
         grade TEXT,
-        mode INTEGER,
         entry_price REAL,
         exit_price REAL,
         size REAL,
         leverage REAL,
-        position_size_usd REAL,
-        risk_usd REAL,
+        stop_loss REAL,
+        take_profit REAL,
         pnl_usd REAL,
-        pnl_pct REAL,
-        outcome TEXT,
+        status TEXT DEFAULT 'closed',
         signals_fired TEXT,
         htf_aligned INTEGER,
         session TEXT,
-        notes TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        outcome TEXT
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS bot_state (
@@ -113,6 +110,7 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
+    # Add missing columns
     try:
         c.execute("ALTER TABLE trades ADD COLUMN leverage REAL DEFAULT 1")
     except:
@@ -125,11 +123,17 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
         c.execute("ALTER TABLE trades ADD COLUMN take_profit REAL DEFAULT 0")
     except:
         pass
+    try:
+        c.execute("ALTER TABLE trades ADD COLUMN status TEXT DEFAULT 'closed'")
+    except:
+        pass
     
     timestamp = datetime.now().isoformat()
-    date_str = date.today().isoformat()
     
     if status == "open":
+        # First close any existing open positions with same direction
+        c.execute("UPDATE trades SET status = 'closed', outcome = 'REPLACED' WHERE direction = ? AND status = 'open'", (direction,))
+        
         c.execute('''INSERT INTO trades 
             (timestamp_entry, symbol, direction, regime, grade, module_used, 
              entry_price, size, pnl_usd, status, signals_fired, htf_aligned, session, leverage, stop_loss, take_profit)
@@ -138,6 +142,7 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
              entry_price, size, pnl, status, signals, 1 if htf_aligned else 0, session, leverage, stop_loss, take_profit))
     
     elif status == "closed":
+        # Update the most recent open trade with same direction
         c.execute('''UPDATE trades SET 
             timestamp_exit = ?, exit_price = ?, pnl_usd = ?, status = ?, outcome = ?
             WHERE id = (SELECT id FROM trades WHERE 
