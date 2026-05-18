@@ -280,8 +280,18 @@ class TradingBot:
         price = state.current_price
         direction = setup.direction
         risk_amount = self.balance * setup.risk_pct
-        
         atr = state.atr
+        
+        if setup.stop_loss <= 0 or setup.tp2 <= 0:
+            if direction == "LONG":
+                setup.stop_loss = price - (atr * 2)
+                setup.tp1 = price + (atr * 2)
+                setup.tp2 = price + (atr * 4)
+            else:
+                setup.stop_loss = price + (atr * 2)
+                setup.tp1 = price - (atr * 2)
+                setup.tp2 = price - (atr * 4)
+            logger.info(f"SL/TP not set by AI brain - using ATR fallback: SL={setup.stop_loss} TP2={setup.tp2}")
         
         if price > 0 and setup.stop_loss > 0:
             stop_distance = abs(price - setup.stop_loss)
@@ -290,25 +300,6 @@ class TradingBot:
             else:
                 position_size = risk_amount / price
         else:
-            if direction == "LONG":
-                sl = price - (atr * 2)
-                tp1 = price + (atr * 2)
-                tp2 = price + (atr * 4)
-            else:
-                sl = price + (atr * 2)
-                tp1 = price - (atr * 2)
-                tp2 = price - (atr * 4)
-            setup.stop_loss = sl
-            setup.tp1 = tp1
-            setup.tp2 = tp2
-            stop_distance = abs(price - sl)
-            if stop_distance > 0:
-                position_size = risk_amount / stop_distance
-            else:
-                position_size = risk_amount / price
-        
-        if position_size * price * setup.leverage < config.MIN_POSITION_USD:
-            logger.warning(f"Position too small: ${position_size * price * setup.leverage}")
             return False
         
         if position_size * price * setup.leverage < config.MIN_POSITION_USD:
