@@ -142,12 +142,11 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
              entry_price, size, pnl, status, signals, 1 if htf_aligned else 0, session, leverage, stop_loss, take_profit))
     
     elif status == "closed":
-        # Update the most recent open trade with same direction
+        # Find trade by both direction AND entry_price to ensure we close the right one
         c.execute('''UPDATE trades SET 
             timestamp_exit = ?, exit_price = ?, pnl_usd = ?, status = ?, outcome = ?
-            WHERE id = (SELECT id FROM trades WHERE 
-            direction = ? AND status = 'open' ORDER BY id DESC LIMIT 1)''',
-            (timestamp, exit_price, pnl, status, outcome, direction))
+            WHERE direction = ? AND entry_price = ? AND status = 'open' LIMIT 1''',
+            (timestamp, exit_price, pnl, status, outcome, direction, entry_price))
     
     conn.commit()
     conn.close()
