@@ -121,7 +121,7 @@ def get_stats():
     total_pnl, total_trades = c.fetchone()
     total_trades = total_trades or 0
     
-    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE date(timestamp_entry) = date('now')")
+    c.execute("SELECT SUM(pnl_usd), COUNT(*) FROM trades WHERE status = 'closed' AND date(timestamp_entry) = date('now')")
     daily_pnl, daily_trades = c.fetchone()
     daily_trades = daily_trades or 0
     
@@ -218,7 +218,7 @@ HTML = """
 <html>
 <head>
     <title>Delta Trading Bot</title>
-    <meta http-equiv="refresh" content="15">
+    <meta http-equiv="refresh" content="3">
     <style>
         body { font-family: Arial; background: #111; color: #eee; margin: 0; padding: 20px; }
         .container { max-width: 1100px; margin: 0 auto; }
@@ -378,6 +378,127 @@ def get_closed_trades():
         "yesterday": yesterday_trades,
         "history": history_trades
     }
+
+
+# ===== API ENDPOINTS FOR REAL-TIME DATA =====
+@app.route('/api/open-trades')
+def api_open_trades():
+    """Return all open trades with live PnL"""
+    current_price = get_current_price()
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    
+    c.execute("""SELECT id, direction, entry_price, size, leverage, stop_loss, take_profit, 
+                 signals_fired, timestamp_entry FROM trades WHERE status = 'open'""")
+    
+    trades = []
+    for row in c.fetchall():
+        trade_id, direction, entry, size, lev, sl, tp, setup, timestamp = row
+        entry = float(entry or 0)
+        size = float(size or 0)
+        lev = float(lev or 1)
+        
+        # Calculate live PnL
+        if direction == "LONG":
+            pnl = (current_price - entry) * size * lev
+        else:
+            pnl = (entry - current_price) * size * lev
+        
+        trades.append({
+            "id": trade_id,
+            "direction": direction,
+            "entry_price": entry,
+            "current_price": current_price,
+            "size": size,
+            "leverage": lev,
+            "stop_loss": float(sl or 0),
+            "take_profit": float(tp or 0),
+            "pnl": round(pnl, 2),
+            "setup": setup,
+            "timestamp": timestamp
+        })
+    
+    conn.close()
+    return {"trades": trades, "current_price": current_price}
+
+
+@app.route('/api/closed-trades')
+def api_closed_trades():
+    """Return all closed trades"""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    
+    c.execute("""SELECT id, direction, entry_price, exit_price, size, leverage, pnl_usd, 
+                 signals_fired, outcome, timestamp_entry, timestamp_exit 
+                 FROM trades WHERE status = 'closed' ORDER BY id DESC""")
+    
+    trades = []
+    for row in c.fetchall():
+        trades.append({
+            "id": row[0],
+            "direction": row[1],
+            "entry_price": float(row[2] or 0),
+            "exit_price": float(row[3] or 0),
+            "size": float(row[4] or 0),
+            "leverage": float(row[5] or 1),
+            "pnl": float(row[6] or 0),
+            "setup": row[7],
+            "outcome": row[8],
+            "timestamp_entry": row[9],
+            "timestamp_exit": row[10]
+        })
+    
+    conn.close()
+    return {"trades": trades}
+
+
+@app.route('/api/stats')
+def api_stats():
+    """Return stats as JSON"""
+    return get_stats()
+
+
+@app.route('/api/current-price')
+def api_price():
+    """Return current price"""
+    price = get_current_price()
+    return {"price": price, "timestamp": get_indian_time()}
+
+
+@app.route('/api/close/<int:trade_id>')
+def api_close_trade(trade_id):
+    """Close a trade via API"""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        
+        c.execute("SELECT direction, entry_price, size, leverage FROM trades WHERE id = ? AND status = 'open'", (trade_id,))
+        row = c.fetchone()
+        
+        if not row:
+            conn.close()
+            return {"success": False, "error": "Trade not found"}
+        
+        direction, entry, size, leverage = row
+        entry = float(entry or 0)
+        size = float(size or 0)
+        leverage = float(leverage or 1)
+        current_price = get_current_price()
+        
+        if direction == "LONG":
+            pnl = (current_price - entry) * size * leverage
+        else:
+            pnl = (entry - current_price) * size * leverage
+        
+        timestamp = datetime.now().isoformat()
+        c.execute("""UPDATE trades SET timestamp_exit=?, exit_price=?, pnl_usd=?, status=?, outcome=? 
+                    WHERE id=?""", (timestamp, current_price, pnl, "closed", "MANUAL", trade_id))
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "pnl": round(pnl, 2), "exit_price": current_price}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.route('/')
