@@ -16,7 +16,13 @@ import config
 from delta_client import DeltaClient
 from indicators import Indicators
 from ai_brain import AIBrain
-import dashboard
+
+# Dashboard import - only for Flask, not for worker
+try:
+    import dashboard
+except:
+    dashboard = None
+
 from trade_manager import save_trade, close_trade, get_open
 
 try:
@@ -412,8 +418,10 @@ class TradingBot:
             })
             position["trade_id"] = trade_id
             
-            # Log to both dashboard (SQLite) and trade_manager (JSON)
-            dashboard.log_trade(
+            # Log to dashboard (if available)
+            if dashboard:
+                try:
+                    dashboard.log_trade(
                 direction=direction,
                 entry_price=price,
                 exit_price=0,
@@ -430,7 +438,9 @@ class TradingBot:
                 leverage=setup.leverage,
                 stop_loss=setup.stop_loss,
                 take_profit=setup.tp2
-            )
+                )
+                except:
+                    pass
             
             # Also save to SQLite TradeManager for dashboard sync
             if self.trade_manager:
@@ -525,25 +535,29 @@ class TradingBot:
                 else:
                     self.ai_brain.consecutive_losses += 1
                 
-                dashboard.log_trade(
-                    direction=pos["direction"],
-                    entry_price=pos["entry_price"],
-                    exit_price=current_price,
-                    size=pos["size"],
-                    pnl=pnl,
-                    status="closed",
-                    confidence=0,
-                    regime="",
-                    signals="",
-                    htf_aligned=False,
-                    session="",
-                    grade=pos.get("setup", ""),
-                    module=pos.get("setup", ""),
-                    outcome=reason,
-                    leverage=pos.get("leverage", 1),
-                    stop_loss=pos.get("stop_loss", 0),
-                    take_profit=pos.get("take_profit_2", 0)
-                )
+                if dashboard:
+                    try:
+                        dashboard.log_trade(
+                            direction=pos["direction"],
+                            entry_price=pos["entry_price"],
+                            exit_price=current_price,
+                            size=pos["size"],
+                            pnl=pnl,
+                            status="closed",
+                            confidence=0,
+                            regime="",
+                            signals="",
+                            htf_aligned=False,
+                            session="",
+                            grade=pos.get("setup", ""),
+                            module=pos.get("setup", ""),
+                            outcome=reason,
+                            leverage=pos.get("leverage", 1),
+                            stop_loss=pos.get("stop_loss", 0),
+                            take_profit=pos.get("take_profit_2", 0)
+                        )
+                    except:
+                        pass
                 
                 # Also save to SQLite TradeManager
                 if self.trade_manager:
