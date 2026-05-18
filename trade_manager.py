@@ -16,6 +16,7 @@ class TradeManager:
         self.db_path = db_path
         self._init_db()
         self.migrate_from_json()
+        self.migrate_from_old_db()
     
     def _init_db(self):
         """Initialize SQLite database with trades table"""
@@ -79,6 +80,59 @@ class TradeManager:
             print("Migrated trades from JSON to SQLite")
         except Exception as e:
             print(f"Migration error: {e}")
+    
+    def migrate_from_old_db(self, old_db: str = "trades.db"):
+        """Import trades from old SQLite database if exists"""
+        if not os.path.exists(old_db):
+            return
+        
+        try:
+            old_conn = sqlite3.connect(old_db)
+            old_c = old_conn.cursor()
+            
+            # Get all trades from old DB
+            old_c.execute("SELECT id, direction, entry_price, exit_price, pnl_usd, status, signals_fired, stop_loss, take_profit, size, leverage, timestamp_entry, timestamp_exit, outcome FROM trades")
+            
+            conn = sqlite3.connect(self.db_path)
+            c = conn.cursor()
+            
+            for row in old_c.fetchall():
+                trade_id = str(row[0])
+                if self._trade_id_exists(trade_id):
+                    continue
+                
+                direction = row[1] or "SHORT"
+                side = "buy" if direction == "LONG" else "sell"
+                entry = float(row[2] or 0)
+                exit_p = row[3]
+                pnl = float(row[4] or 0) if row[4] else None
+                status = row[5] or "closed"
+                setup = row[6] or "unknown"
+                sl = float(row[7] or 0)
+                tp = float(row[8] or 0)
+                size = float(row[9] or 0.001) * float(row[10] or 1)
+                lev = int(row[10] or 1)
+                open_time = row[11]
+                close_time = row[12]
+                close_reason = row[13]
+                
+                margin = size * entry / lev if lev > 0 else size * entry
+                
+                c.execute('''INSERT OR IGNORE INTO trades (
+                    trade_id, symbol, side, entry_price, close_price, tp, sl,
+                    size, leverage, margin_used, pnl, status, close_reason, 
+                    open_time, close_time, fees, net_pnl
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (trade_id, "BTCUSD", side, entry, exit_p, tp, sl,
+                     size, lev, margin, pnl, status, close_reason,
+                     open_time, close_time, 0, pnl))
+            
+            conn.commit()
+            conn.close()
+            old_conn.close()
+            print("Migrated trades from old SQLite database")
+        except Exception as e:
+            print(f"Old DB migration error: {e}")
     
     def _trade_id_exists(self, trade_id: str) -> bool:
         conn = sqlite3.connect(self.db_path)
