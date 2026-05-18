@@ -102,8 +102,8 @@ def init_db():
 
 
 def log_trade(direction: str, entry_price: float, exit_price: float, 
-              size: float, pnl: float, status: str, confidence: float,
-              regime: str, signals: str = "", htf_aligned: bool = False,
+              size: float, pnl: float, status: str, confidence: float = 80,
+              regime: str = "", signals: str = "", htf_aligned: bool = False,
               session: str = "", grade: str = "", module: str = "",
               outcome: str = "", leverage: int = 1, stop_loss: float = 0, take_profit: float = 0):
     """Log a trade to database."""
@@ -124,6 +124,10 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
     except:
         pass
     try:
+        c.execute("ALTER TABLE trades ADD COLUMN confidence REAL DEFAULT 80")
+    except:
+        pass
+    try:
         c.execute("ALTER TABLE trades ADD COLUMN status TEXT DEFAULT 'closed'")
     except:
         pass
@@ -131,15 +135,19 @@ def log_trade(direction: str, entry_price: float, exit_price: float,
     timestamp = datetime.now().isoformat()
     
     if status == "open":
-        # First close the MOST RECENT open position with same direction (not ALL)
-        c.execute("UPDATE trades SET status = 'closed', outcome = 'REPLACED' WHERE id = (SELECT id FROM trades WHERE direction = ? AND status = 'open' ORDER BY id DESC LIMIT 1)", (direction,))
+        try:
+            c.execute("UPDATE trades SET status = 'closed', outcome = 'REPLACED' WHERE id = (SELECT id FROM trades WHERE direction = ? AND status = 'open' ORDER BY id DESC LIMIT 1)", (direction,))
+        except:
+            pass
         
-        c.execute('''INSERT INTO trades 
-            (timestamp_entry, symbol, direction, regime, grade, module_used, 
-             entry_price, size, pnl_usd, status, signals_fired, htf_aligned, session, leverage, stop_loss, take_profit)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-            (timestamp, "BTCUSD", direction, regime, grade, module,
-             entry_price, size, pnl, status, signals, 1 if htf_aligned else 0, session, leverage, stop_loss, take_profit))
+        try:
+            c.execute('''INSERT INTO trades 
+                (timestamp_entry, symbol, direction, regime, grade, module_used, 
+                 entry_price, size, pnl_usd, status, signals_fired, htf_aligned, session, leverage, stop_loss, take_profit)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                (timestamp, "BTCUSD", direction, regime, grade, module, entry_price, size, pnl, status, signals, 1 if htf_aligned else 0, session, leverage, stop_loss, take_profit))
+        except Exception as e:
+            print(f"INSERT ERROR: {e}")
     
     elif status == "closed":
         # Find trade by both direction AND entry_price to ensure we close the right one
