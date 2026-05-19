@@ -17,7 +17,7 @@ from typing import Dict, Optional, List
 import threading
 
 import config
-from delta_client import DeltaClient
+from binance_client import BinanceClient
 from paper_engine import PaperEngine
 from indicators import Indicators
 from ai_brain import AIBrain
@@ -102,7 +102,7 @@ class TradingBot:
         if config.DRY_RUN:
             self.client = PaperEngine(api_key, api_secret, config.STARTING_CAPITAL)
         else:
-            self.client = DeltaClient(api_key, api_secret)
+            self.client = BinanceClient(api_key, api_secret)
 
         self.news_engine = None
         self.move_detector = None
@@ -949,7 +949,7 @@ class TradingBot:
         self.ai_brain.reset_daily()
 
         logger.info("=" * 60)
-        logger.info("DELTA EXCHANGE AI TRADING BOT - SETUP BASED")
+        logger.info("BINANCE FUTURES AI TRADING BOT - SETUP BASED")
         logger.info(f"Starting Capital: ${config.STARTING_CAPITAL}")
         logger.info(f"Mode: {'DRY RUN' if config.DRY_RUN else 'LIVE'}")
         logger.info(f"Max Trades/Day: {config.MAX_TRADES_PER_DAY}")

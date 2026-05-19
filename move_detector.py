@@ -14,13 +14,13 @@ from typing import Dict, List, Optional
 from collections import deque
 
 import config
-from delta_client import DeltaClient
+from binance_client import BinanceClient
 
 logger = logging.getLogger(__name__)
 
 
 class MoveDetector:
-    def __init__(self, client: DeltaClient):
+    def __init__(self, client: BinanceClient):
         self.client = client
         self.price_history: deque = deque(maxlen=20)
         self.volume_history: deque = deque(maxlen=20)
@@ -144,7 +144,7 @@ class MoveDetector:
 
         try:
             # FIXED: Use correct API domain
-            url = f"{config.BASE_URL}/v2/tickers" if hasattr(config, 'BASE_URL') else "https://api.india.delta.exchange/v2/tickers"
+            url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
             response = requests.get(url, timeout=10)
 
             if response.status_code == 200:
@@ -176,17 +176,12 @@ class MoveDetector:
 
         try:
             # FIXED: Use correct API domain
-            url = f"{config.BASE_URL}/v2/open_interest" if hasattr(config, 'BASE_URL') else "https://api.india.delta.exchange/v2/open_interest"
+            url = "https://fapi.binance.com/fapi/v2/openInterest?symbol=BTCUSDT"
             response = requests.get(url, timeout=10)
 
             if response.status_code == 200:
                 data = response.json()
-
-                current_oi = 0
-                for oi_data in data.get("result", []):
-                    if oi_data.get("symbol") == "BTCUSD":
-                        current_oi = oi_data.get("open_interest", 0)
-                        break
+                current_oi = float(data.get("openInterest", 0) or 0)
 
                 if self.oi_history:
                     prev_oi = self.oi_history[-1]

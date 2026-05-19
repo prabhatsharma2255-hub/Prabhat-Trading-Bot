@@ -37,10 +37,10 @@ def log_trade(direction, entry_price, exit_price, size, pnl, status, confidence=
 
 def get_live_price():
     try:
-        r = requests.get("https://api.india.delta.exchange/v2/tickers/BTCUSD", timeout=2)
+        r = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=2)
         data = r.json()
-        if data and "result" in data:
-            return float(data["result"].get("close", 0))
+        if data and "price" in data:
+            return float(data["price"])
     except:
         return 0
     return 0

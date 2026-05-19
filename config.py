@@ -1,5 +1,5 @@
 """
-Delta Exchange Trading Bot - Complete System
+Binance Futures Trading Bot - Complete System
 12 SETUPS: 6 swing + 3 scalp + 3 aggressive
 """
 
@@ -7,26 +7,23 @@ import os
 
 # API Configuration
 # IMPORTANT: Set these as environment variables! NEVER commit real keys.
-# To set: export DELTA_API_KEY="your_key" DELTA_API_SECRET="your_secret" (Linux/Mac)
-# Or: set DELTA_API_KEY=your_key & set DELTA_API_SECRET=your_secret (Windows)
-DELTA_API_KEY = os.getenv("DELTA_API_KEY", "")
-DELTA_API_SECRET = os.getenv("DELTA_API_SECRET", "")
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "plJTwnu03gglJF0bHXZ9YxaE15nCDx1GwFLAvl3mqJJXwWvcwWFuHLLy3X4XwoG3")
+BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "1AHR88BGpN8aDYN9cyhBOUgvJYMAAiVnOtTBZOhYQplQx19Tr0GyXRkBdMcUxOus")
 
 # If keys are empty, we'll use dry run mode by default
-if not DELTA_API_KEY or not DELTA_API_SECRET:
-    print("WARNING: Delta API keys not set! Using DRY RUN mode.")
-    # Force dry run if no API keys
+if not BINANCE_API_KEY or not BINANCE_API_SECRET:
+    print("WARNING: Binance API keys not set! Using DRY RUN mode.")
     DRY_RUN = True
+else:
+    print("Binance API keys loaded. Real trading enabled.")
+    DRY_RUN = False
 
 # Symbol
-SYMBOL = "BTCUSD"
+SYMBOL = "BTCUSDT"
 
 # Account
 STARTING_CAPITAL = 100.0
-# DRY_RUN is also defined above if keys missing; can be overridden here
-if 'DRY_RUN' not in dir():
-    DRY_RUN = True  # TEST MODE - set False for real trading
-MIN_POSITION_USD = 10.0  # Minimum $10 position to execute
+MIN_POSITION_USD = 10.0
 
 # ============================================================
 # SETUP RISKS AND LEVERAGE
@@ -182,8 +179,8 @@ MODE2_SUSPEND_CONSEC_LOSSES = 3  # Suspend Mode 2 after 3 losses
 # EXECUTION
 # ============================================================
 
-# Base URL for Delta Exchange India API
-BASE_URL = "https://api.india.delta.exchange"
+# Base URL for Binance USD-M Futures API
+BASE_URL = "https://fapi.binance.com"
 
 POLLING_INTERVAL = 10  # Real-time (10 seconds)
 TIMEFRAMES = {

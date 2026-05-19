@@ -19,7 +19,7 @@ except:
 
 try:
     import config
-    from delta_client import DeltaClient
+    from binance_client import BinanceClient
     BOT_AVAILABLE = True
 except:
     BOT_AVAILABLE = False
@@ -44,7 +44,7 @@ _price_lock = threading.Lock()
 def _cached_price_updater():
     while True:
         try:
-            r = requests.get("https://api.india.delta.exchange/v2/tickers/BTCUSD", timeout=5)
+            r = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5)
             data = r.json()
             if data and "result" in data:
                 price = float(data["result"].get("close", 0))
@@ -221,7 +221,7 @@ HTML = (
     ".tab.active{background:#0c6;color:#000;border-color:#0c6;font-weight:bold}.tab-content{display:none}.tab-content.active{display:block}"
     "@media (max-width:600px){body{padding:10px}.stats{grid-template-columns:repeat(3,1fr)}.stat{padding:8px}.stat .val{font-size:14px}table{font-size:11px}th,td{padding:5px 3px}}"
     "</style></head><body><div class=container>"
-    "<h1>DELTA TRADING BOT</h1>"
+    "<h1>BINANCE TRADING BOT</h1>"
     '<div class=top-bar><div class=price-box>BTC/USD: $<span id=price>__PRICE__</span><span class=change id=change></span></div>'
     '<span class=status-badge><span class="dot green" id=status-dot></span><span id=status-text>live</span></span></div>'
     '<div id=msg class=msg></div>'
@@ -374,9 +374,9 @@ def close_trade_redirect(trade_id):
     try:
         current_price = get_current_price()
         close_success = False
-        if BOT_AVAILABLE and hasattr(config, 'DELTA_API_KEY') and config.DELTA_API_KEY:
+        if BOT_AVAILABLE and hasattr(config, 'BINANCE_API_KEY') and config.BINANCE_API_KEY:
             try:
-                client = DeltaClient(config.DELTA_API_KEY, config.DELTA_API_SECRET)
+                client = BinanceClient(config.BINANCE_API_KEY, config.BINANCE_API_SECRET)
                 for trade in tm.get_open_trades():
                     if str(trade["id"]) == str(trade_id):
                         side = trade["side"]
@@ -431,9 +431,9 @@ def api_close_trade(trade_id):
     try:
         current_price = get_current_price()
         close_success = False
-        if BOT_AVAILABLE and hasattr(config, 'DELTA_API_KEY') and config.DELTA_API_KEY:
+        if BOT_AVAILABLE and hasattr(config, 'BINANCE_API_KEY') and config.BINANCE_API_KEY:
             try:
-                client = DeltaClient(config.DELTA_API_KEY, config.DELTA_API_SECRET)
+                client = BinanceClient(config.BINANCE_API_KEY, config.BINANCE_API_SECRET)
                 for trade in tm.get_open_trades():
                     if str(trade["id"]) == str(trade_id):
                         side = trade["side"]
