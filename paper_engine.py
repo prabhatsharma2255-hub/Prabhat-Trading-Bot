@@ -87,6 +87,11 @@ class PaperEngine:
             self.balance = state.get("balance", self.initial_balance)
             self._equity = state.get("equity", self.balance)
             self._trade_counter = state.get("trade_counter", 0)
+            # Auto-heal: if balance is stuck at 0 or below min margin, reset
+            if self.balance < config.MIN_POSITION_USD:
+                logger.warning(f"PaperEngine balance (${self.balance:.2f}) below min margin — resetting to ${self.initial_balance:.2f}")
+                self.balance = self.initial_balance
+                self._equity = self.initial_balance
             logger.info(f"PaperEngine state restored: balance=${self.balance:.2f}")
         except:
             pass
