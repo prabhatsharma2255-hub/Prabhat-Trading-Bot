@@ -6,15 +6,26 @@ Delta Exchange Trading Bot - Complete System
 import os
 
 # API Configuration
-DELTA_API_KEY = os.getenv("DELTA_API_KEY", "AiFZdExVer9VSEIrBNBZX1djmGHQHZ")
-DELTA_API_SECRET = os.getenv("DELTA_API_SECRET", "jjlSbOMqME3vOwjZ7RZamFi8UGM3hmf0M6fsx3D8632a2BISpggy7x5eiaTH")
+# IMPORTANT: Set these as environment variables! NEVER commit real keys.
+# To set: export DELTA_API_KEY="your_key" DELTA_API_SECRET="your_secret" (Linux/Mac)
+# Or: set DELTA_API_KEY=your_key & set DELTA_API_SECRET=your_secret (Windows)
+DELTA_API_KEY = os.getenv("DELTA_API_KEY", "")
+DELTA_API_SECRET = os.getenv("DELTA_API_SECRET", "")
+
+# If keys are empty, we'll use dry run mode by default
+if not DELTA_API_KEY or not DELTA_API_SECRET:
+    print("WARNING: Delta API keys not set! Using DRY RUN mode.")
+    # Force dry run if no API keys
+    DRY_RUN = True
 
 # Symbol
 SYMBOL = "BTCUSD"
 
 # Account
 STARTING_CAPITAL = 100.0
-DRY_RUN = True  # TEST MODE
+# DRY_RUN is also defined above if keys missing; can be overridden here
+if 'DRY_RUN' not in dir():
+    DRY_RUN = True  # TEST MODE - set False for real trading
 MIN_POSITION_USD = 10.0  # Minimum $10 position to execute
 
 # ============================================================
@@ -114,7 +125,8 @@ FUNDING_NORMAL_THRESHOLD = 0.0003   # 0.03%
 # NEWS API CONFIG
 # ============================================================
 
-CRYPTOPANIC_TOKEN = "your_free_token_here"
+NEWSAPI_KEY = os.getenv("NEWSAPI_KEY", "")  # Set via env var or leave empty
+CRYPTOPANIC_TOKEN = os.getenv("CRYPTOPANIC_TOKEN", "")
 NEWS_POLL_INTERVAL_MIN = 5
 FNG_POLL_INTERVAL_MIN = 60
 COINGECKO_POLL_MIN = 15
@@ -156,8 +168,21 @@ SESSION_DEAD_START = 22
 SESSION_DEAD_END = 2
 
 # ============================================================
+# RISK MANAGER CONFIG
+# ============================================================
+
+MAX_CONSECUTIVE_LOSSES = 5       # Stop after 5 consecutive losses
+RISK_MODE1_GRADE_A = 0.03       # 3% risk for Grade A trades
+RISK_MODE2_DEFAULT = 0.015      # 1.5% default risk for Mode 2
+MAX_SL_DISTANCE_PCT = 0.05      # Max 5% stop loss distance
+MODE2_SUSPEND_CONSEC_LOSSES = 3  # Suspend Mode 2 after 3 losses
+
+# ============================================================
 # EXECUTION
 # ============================================================
+
+# Base URL for Delta Exchange India API
+BASE_URL = "https://api.india.delta.exchange"
 
 POLLING_INTERVAL = 10  # Real-time (10 seconds)
 TIMEFRAMES = {

@@ -12,7 +12,6 @@ print("=" * 60)
 
 import config
 from trading_bot import TradingBot
-from dashboard import get_daily_stats, get_all_time_stats
 from web_dashboard import app
 
 # Start Flask dashboard in a separate thread
@@ -27,7 +26,8 @@ def run_bot():
 
     print(f"Mode: {'DRY RUN' if config.DRY_RUN else 'LIVE'}")
     print(f"Symbol: {config.SYMBOL}")
-    print(f"Capital: ${config.CAPITAL}")
+    # FIXED: config.CAPITAL -> config.STARTING_CAPITAL
+    print(f"Capital: ${config.STARTING_CAPITAL}")
     print("=" * 60)
 
     bot = TradingBot(api_key, api_secret)

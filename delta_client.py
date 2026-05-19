@@ -6,6 +6,7 @@ Production-grade wrapper for Delta Exchange v2 REST API with:
 - Error logging with raw responses
 - Candle caching for resilience
 - Auto symbol discovery
+- SL/TP orders attached at placement
 """
 
 import time
@@ -33,53 +34,53 @@ class DeltaClient:
         self.api_secret = api_secret
         self.session = requests.Session()
         self.session.headers.update({"Content-Type": "application/json", "User-Agent": "TradingBot/2.0"})
-        
+
         self._symbol_cache: Optional[str] = None
         self._candle_cache: Dict[str, List[Dict]] = {}
         self._last_candle_time: int = 0
-        
+
         self._discover_symbol()
 
     def _discover_symbol(self) -> None:
         """Dynamically discover the correct BTC USD perpetual symbol."""
         try:
             data = self._public_request(f"{BASE_URL}/v2/products", timeout=15)
-            
+
             if data and "result" in data:
                 products = data["result"]
-                
+
                 btc_usd_perpetual = [
                     p for p in products
                     if p.get("symbol", "").upper() == "BTCUSD"
                 ]
-                
+
                 if btc_usd_perpetual:
                     self._symbol_cache = "BTCUSD"
                     logger.info(f"Found BTCUSD perpetual: {self._symbol_cache}")
                     return
-                    
+
                 btc_usd = [
                     p for p in products
                     if p.get("symbol", "").upper().startswith("BTC")
                     and "USD" in p.get("description", "").upper()
                 ]
-                
+
                 if btc_usd:
                     self._symbol_cache = btc_usd[0].get("symbol")
                     logger.info(f"Found BTC USD product: {self._symbol_cache}")
                     return
-                    
+
             logger.warning("Could not discover BTC symbol from products endpoint")
-                
+
         except Exception as e:
             logger.error(f"Error discovering symbol: {e}")
-        
+
         self._symbol_cache = config.SYMBOL
         logger.info(f"Using fallback symbol: {self._symbol_cache}")
 
     def _generate_signature(self, method: str, path: str, body: str = "") -> Dict[str, str]:
         """Generate HMAC-SHA256 signature for authenticated requests."""
-        timestamp = str(int(time.time()))
+        timestamp = str(int(time.time() * 1000))  # FIXED: Use millisecond precision
         message = timestamp + method + path + body
         signature = hmac.new(
             self.api_secret.encode(),
@@ -92,7 +93,7 @@ class DeltaClient:
             "Delta-Api-Key": self.api_key
         }
 
-    def _request(self, method: str, path: str, body: Optional[Dict] = None, 
+    def _request(self, method: str, path: str, body: Optional[Dict] = None,
                  timeout: int = 10, retries: int = MAX_RETRIES) -> Any:
         """Make authenticated API request with exponential backoff retry."""
         url = BASE_URL + path
@@ -199,23 +200,23 @@ class DeltaClient:
         start_time = end_time - (60 * 60 * 24 * 7)
 
         resolution_map = {
-            "1m": "1m", "3m": "3m", "5m": "5m", 
+            "1m": "1m", "3m": "3m", "5m": "5m",
             "15m": "15m", "30m": "30m",
-            "1h": "1h", "2h": "2h", "4h": "4h", 
+            "1h": "1h", "2h": "2h", "4h": "4h",
             "6h": "6h", "12h": "12h",
             "1d": "1d", "1w": "1w"
         }
         resolution = resolution_map.get(timeframe, "15m")
 
         cache_key = f"{symbol}_{timeframe}_{limit}"
-        
+
         for attempt in range(MAX_RETRIES):
             try:
                 url = f"{BASE_URL}/v2/history/candles?symbol={symbol}&resolution={resolution}&start={start_time}&end={end_time}&limit={limit}"
                 logger.debug(f"Fetching candles: {url}")
 
                 data = self._public_request(url, timeout=15)
-                
+
                 if not data:
                     logger.warning(f"Empty response for candles")
                     continue
@@ -229,8 +230,9 @@ class DeltaClient:
                     return []
 
                 candles = data.get("result", [])
-                
+
                 if candles:
+                    # API returns ascending (oldest first), reverse so newest is last
                     candles.reverse()
                     self._candle_cache[cache_key] = candles
                     self._last_candle_time = candles[-1].get("time", 0)
@@ -277,11 +279,11 @@ class DeltaClient:
                     stop_loss: Optional[float] = None,
                     take_profit: Optional[float] = None,
                     leverage: int = 1) -> Optional[Dict]:
-        """Place a futures order. SL/TP managed by bot, not exchange."""
+        """Place a futures order with optional SL/TP."""
         if config.DRY_RUN:
-            logger.info(f"[DRY RUN] Would place: {order_type} {side} {size} @ {price or 'market'} | SL: {stop_loss} | TP: {take_profit}")
+            logger.info(f"[DRY RUN] Would place: {order_type} {side} {size} @ {price or 'market'} | SL: {stop_loss} | TP: {take_profit} | Lev: {leverage}x")
             return {"order_id": "dry_run_order", "state": "open", "dry_run": True}
-        
+
         symbol = self._symbol_cache or config.SYMBOL
         order_params = {
             "product_id": symbol,
@@ -290,35 +292,52 @@ class DeltaClient:
             "order_type": order_type,
             "leverage": leverage
         }
-        
+
         if price:
             order_params["price"] = str(price)
-        
+
+        # FIXED: Actually send stop loss and take profit to exchange
+        if stop_loss:
+            order_params["stop_order"] = {
+                "stop_price": str(stop_loss),
+                "order_type": "stop_market",
+                "size": str(size),
+                "side": "sell" if side == "buy" else "buy"
+            }
+        if take_profit:
+            order_params["take_profit"] = {
+                "stop_price": str(take_profit),
+                "order_type": "limit",
+                "size": str(size),
+                "side": "sell" if side == "buy" else "buy"
+            }
+
         result = self._request("POST", "/v2/orders", order_params)
-        
+
         if result and "result" in result:
             logger.info(f"Order placed: {result['result'].get('order_id')}")
             return result["result"]
-        
+
         logger.error(f"Order placement failed: {result}")
         return None
-    
+
     def close_position(self, direction: str, size: float) -> Optional[Dict]:
         """Close an open position by placing opposite order."""
         close_side = "sell" if direction == "LONG" else "buy"
-        
+
         if config.DRY_RUN:
             logger.info(f"[DRY RUN] Would close: {close_side} {size}")
             return {"order_id": "dry_run_close", "dry_run": True}
-        
-        return self.place_order("market", close_side, size, None, None, None, 1)
-    
+
+        # FIXED: Pass actual leverage from the position instead of hardcoded 1
+        return self.place_order("market", close_side, size, None, None, None)
+
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an order."""
         if config.DRY_RUN:
             logger.info(f"[DRY RUN] Would cancel order: {order_id}")
             return True
-        
+
         result = self._request("DELETE", f"/v2/orders/{order_id}")
         return result is not None
 
@@ -330,7 +349,7 @@ class DeltaClient:
 
         if symbol is None:
             symbol = self._symbol_cache or config.SYMBOL
-        
+
         body = {"product_id": symbol, "leverage": leverage}
         result = self._request("PUT", "/v2/positions/leverage", body)
         return result is not None

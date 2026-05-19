@@ -677,6 +677,7 @@ class Indicators:
         for el in equal_lows:
             if el < current_price:
                 nearest_below = el
+                break
         
         return {
             "equal_highs": equal_highs,

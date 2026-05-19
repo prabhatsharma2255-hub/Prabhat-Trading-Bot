@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Web Dashboard - Reads from trades.json"""
+"""Web Dashboard - Reads from trades.db"""
 
 from flask import Flask, render_template_string, request, redirect
 import requests
@@ -27,7 +27,7 @@ def get_indian_time():
     return ist_time.strftime("%Y-%m-%d %H:%M:%S IST")
 
 app = Flask(__name__)
-TRADES_FILE = "trades.json"
+TRADES_FILE = "trades.db"
 
 def get_current_price():
     try:
@@ -42,24 +42,25 @@ def get_current_price():
 def get_trade_manager():
     if TradeManager is None:
         return None
-    return TradeManager(TRADES_FILE)
+    return TradeManager()
 
 def get_trades():
     tm = get_trade_manager()
     if tm is None:
         return []
-    
+
     current_price = get_current_price()
     trades = []
-    
+
     for trade in tm.get_all_trades():
+        lev = trade.get("leverage", 1) or 1
         t = {
             "id": trade.get("id"),
             "direction": "LONG" if trade.get("side") == "buy" else "SHORT",
             "entry_price": trade.get("entry_price", 0),
             "exit_price": trade.get("close_price") or 0,
             "size": trade.get("size", 0),
-            "leverage": 1,
+            "leverage": lev,
             "stop_loss": trade.get("sl", 0),
             "take_profit": trade.get("tp", 0),
             "pnl_usd": trade.get("pnl") or 0,
@@ -69,11 +70,10 @@ def get_trades():
             "timestamp_exit": trade.get("close_time", ""),
             "outcome": trade.get("close_reason", "")
         }
-        
+
         if t["status"] == "open" and current_price > 0:
             entry = t["entry_price"]
             size = t["size"]
-            lev = t["leverage"]
             if t["direction"] == "LONG":
                 t["current_pnl"] = (current_price - entry) * size * lev
             else:
@@ -82,25 +82,25 @@ def get_trades():
         else:
             t["current_pnl"] = t["pnl_usd"]
             t["current_price"] = t["exit_price"]
-        
+
         trades.append(t)
-    
+
     return trades
 
 def get_closed_trades():
     tm = get_trade_manager()
     if tm is None:
         return {"today": [], "yesterday": [], "history": []}
-    
+
     closed = tm.get_closed_trades()
-    
+
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)
-    
+
     today_trades = []
     yesterday_trades = []
     history_trades = []
-    
+
     for trade in closed:
         close_time = trade.get("close_time", "")
         if close_time:
@@ -110,27 +110,28 @@ def get_closed_trades():
                 trade_date = today
         else:
             continue
-            
+
+        lev = trade.get("leverage", 1) or 1
         t = {
             "id": trade.get("id"),
             "direction": "LONG" if trade.get("side") == "buy" else "SHORT",
             "entry_price": trade.get("entry_price", 0),
             "exit_price": trade.get("close_price") or 0,
             "size": trade.get("size", 0),
-            "leverage": 1,
+            "leverage": lev,
             "pnl_usd": trade.get("pnl") or 0,
             "signals_fired": trade.get("symbol", ""),
             "outcome": trade.get("close_reason", ""),
             "timestamp_exit": close_time
         }
-        
+
         if trade_date == today:
             today_trades.append(t)
         elif trade_date == yesterday:
             yesterday_trades.append(t)
         else:
             history_trades.append(t)
-    
+
     return {
         "today": today_trades,
         "yesterday": yesterday_trades,
@@ -140,7 +141,7 @@ def get_closed_trades():
 def get_stats():
     tm = get_trade_manager()
     current_price = get_current_price()
-    
+
     if tm is None:
         return {
             "total_pnl": 0, "total_trades": 0, "daily_pnl": 0, "daily_trades": 0,
@@ -149,34 +150,38 @@ def get_stats():
             "yesterday_closed_pnl": 0, "yesterday_closed_count": 0,
             "history_closed_pnl": 0, "history_closed_count": 0
         }
-    
+
     open_trades = tm.get_open_trades()
     closed_trades = tm.get_closed_trades()
-    
+
     total_pnl = sum(t.get("pnl", 0) or 0 for t in closed_trades)
     wins = sum(1 for t in closed_trades if (t.get("pnl") or 0) > 0)
     total_trades = len(closed_trades)
-    
+
     today = datetime.now().date()
-    today_closed = [t for t in closed_trades if t.get("close_time") and 
+    today_closed = [t for t in closed_trades if t.get("close_time") and
                    datetime.fromisoformat(t["close_time"]).date() == today]
     today_pnl = sum(t.get("pnl", 0) or 0 for t in today_closed)
-    
+
     unrealized = 0
     for trade in open_trades:
+        lev = trade.get("leverage", 1) or 1
+        size = trade.get("size", 0) or 0
+        entry = trade.get("entry_price", 0)
         if trade.get("side") == "buy":
-            unrealized += (current_price - trade.get("entry_price", 0)) * trade.get("size", 0)
+            unrealized += (current_price - entry) * size * lev
         else:
-            unrealized += (trade.get("entry_price", 0) - current_price) * trade.get("size", 0)
-    
+            unrealized += (entry - current_price) * size * lev
+
     yesterday = today - timedelta(days=1)
-    yesterday_closed = [t for t in closed_trades if t.get("close_time") and 
+    yesterday_closed = [t for t in closed_trades if t.get("close_time") and
                       datetime.fromisoformat(t["close_time"]).date() == yesterday]
     yesterday_pnl = sum(t.get("pnl", 0) or 0 for t in yesterday_closed)
-    
-    history_pnl = sum(t.get("pnl", 0) or 0 for t in closed_trades if 
-                     (t.get("close_time") and datetime.fromisoformat(t["close_time"]).date() < yesterday))
-    
+
+    history_closed = [t for t in closed_trades if t.get("close_time") and
+                     datetime.fromisoformat(t["close_time"]).date() < yesterday]
+    history_pnl = sum(t.get("pnl", 0) or 0 for t in history_closed)
+
     return {
         "total_pnl": total_pnl,
         "total_trades": total_trades,
@@ -192,19 +197,19 @@ def get_stats():
         "yesterday_closed_pnl": yesterday_pnl,
         "yesterday_closed_count": len(yesterday_closed),
         "history_closed_pnl": history_pnl,
-        "history_closed_count": len(closed_trades) - len(today_closed) - len(yesterday_closed)
+        "history_closed_count": len(history_closed)
     }
 
 
-@app.route('/close/<int:trade_id>')
+@app.route('/close/<trade_id>')
 def close_trade(trade_id):
     tm = get_trade_manager()
     if tm is None:
         return redirect('/?error=trade_manager_not_available')
-    
+
     try:
         current_price = get_current_price()
-        
+
         close_success = False
         if BOT_AVAILABLE and hasattr(config, 'DELTA_API_KEY') and config.DELTA_API_KEY:
             try:
@@ -218,15 +223,14 @@ def close_trade(trade_id):
                         break
             except Exception as e:
                 print(f"Exchange close error: {e}")
-        
-        trade = tm.close_trade(str(trade_id), current_price, datetime.now().isoformat(), 
-                               "MANUAL_CLOSE" if close_success else "MANUAL_DB_ONLY")
-        
+
+        trade = tm.close_trade(str(trade_id), current_price, "MANUAL_CLOSE" if close_success else "MANUAL_DB_ONLY")
+
         if trade:
             pnl = trade.get("pnl", 0)
         else:
             pnl = 0
-        
+
         return redirect('/?closed=1&pnl=' + str(round(pnl, 2)))
     except Exception as e:
         return redirect('/?error=' + str(e))
@@ -237,7 +241,7 @@ HTML = """
 <html>
 <head>
     <title>Delta Trading Bot</title>
-    <meta http-equiv="refresh" content="3">
+    <meta http-equiv="refresh" content="5">
     <style>
         body { font-family: Arial; background: #111; color: #eee; margin: 0; padding: 20px; }
         .container { max-width: 1200px; margin: 0 auto; }
@@ -267,13 +271,13 @@ HTML = """
     <div class="container">
         <h1>Delta Trading Bot</h1>
         <div class="price">BTC/USD: ${{ "%.2f"|format(stats.current_price) }}</div>
-        
+
         {% if request.args.get('closed') %}
         <div class="msg green">Position closed! PnL: ${{ request.args.get('pnl') }}</div>
         {% elif request.args.get('error') %}
         <div class="msg red">Error: {{ request.args.get('error') }}</div>
         {% endif %}
-        
+
         <div class="stats">
             <div class="stat"><h3>TOTAL PNL</h3><div class="v {{ 'green' if stats.total_pnl > 0 else 'red' }}">${{ "%.2f"|format(stats.total_pnl) }}</div></div>
             <div class="stat"><h3>UNREALIZED</h3><div class="v {{ 'green' if stats.unrealized_pnl > 0 else 'red' }}">${{ "%.2f"|format(stats.unrealized_pnl) }}</div></div>
@@ -282,80 +286,84 @@ HTML = """
             <div class="stat"><h3>WIN</h3><div class="v">{{ "%.0f"|format(stats.win_rate) }}%</div></div>
             <div class="stat"><h3>OPEN</h3><div class="v">{{ stats.open_positions }}</div></div>
         </div>
-        
+
         <h2>Open Positions</h2>
         <table>
-            <tr><th>Dir</th><th>Entry</th><th>Now</th><th>Size</th><th>SL</th><th>TP</th><th>PnL</th><th>Close</th></tr>
+            <tr><th>Dir</th><th>Entry</th><th>Now</th><th>Size</th><th>Lev</th><th>SL</th><th>TP</th><th>PnL</th><th>Close</th></tr>
             {% for t in trades if t.status == 'open' %}
             <tr>
                 <td class="{{ 'long' if t.direction == 'LONG' else 'short' }}">{{ t.direction }}</td>
                 <td>${{ "%.0f"|format(t.entry_price) }}</td>
                 <td>${{ "%.0f"|format(t.current_price) }}</td>
                 <td>{{ "%.4f"|format(t.size) }}</td>
+                <td>{{ t.leverage }}x</td>
                 <td>${{ "%.0f"|format(t.stop_loss) }}</td>
                 <td>${{ "%.0f"|format(t.take_profit) }}</td>
                 <td class="{{ 'green' if t.current_pnl > 0 else 'red' }}">${{ "%.2f"|format(t.current_pnl) }}</td>
                 <td><a href="/close/{{ t.id }}" class="btn">CLOSE</a></td>
             </tr>
             {% else %}
-            <tr><td colspan="8" class="empty">No open positions</td></tr>
+            <tr><td colspan="9" class="empty">No open positions</td></tr>
             {% endfor %}
         </table>
-        
+
         <h2>Today's Closed Trades ({{ closed.today|length }}) - PnL: ${{ "%.2f"|format(stats.today_closed_pnl) }}</h2>
         <table>
-            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Time</th></tr>
+            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>Lev</th><th>PnL</th><th>Result</th><th>Time</th></tr>
             {% for t in closed.today %}
             <tr>
                 <td class="{{ 'long' if t.direction == 'LONG' else 'short' }}">{{ t.direction }}</td>
                 <td>${{ "%.0f"|format(t.entry_price) }}</td>
                 <td>${{ "%.0f"|format(t.exit_price) }}</td>
                 <td>{{ "%.4f"|format(t.size) }}</td>
+                <td>{{ t.leverage }}x</td>
                 <td class="{{ 'green' if t.pnl_usd > 0 else 'red' }}">${{ "%.2f"|format(t.pnl_usd) }}</td>
                 <td>{{ t.outcome }}</td>
                 <td>{{ t.timestamp_exit[:16] if t.timestamp_exit else '' }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="7" class="empty">No trades today</td></tr>
+            <tr><td colspan="8" class="empty">No trades today</td></tr>
             {% endfor %}
         </table>
-        
+
         <h2>Yesterday's Closed Trades ({{ closed.yesterday|length }}) - PnL: ${{ "%.2f"|format(stats.yesterday_closed_pnl) }}</h2>
         <table>
-            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Time</th></tr>
+            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>Lev</th><th>PnL</th><th>Result</th><th>Time</th></tr>
             {% for t in closed.yesterday %}
             <tr>
                 <td class="{{ 'long' if t.direction == 'LONG' else 'short' }}">{{ t.direction }}</td>
                 <td>${{ "%.0f"|format(t.entry_price) }}</td>
                 <td>${{ "%.0f"|format(t.exit_price) }}</td>
                 <td>{{ "%.4f"|format(t.size) }}</td>
+                <td>{{ t.leverage }}x</td>
                 <td class="{{ 'green' if t.pnl_usd > 0 else 'red' }}">${{ "%.2f"|format(t.pnl_usd) }}</td>
                 <td>{{ t.outcome }}</td>
                 <td>{{ t.timestamp_exit[:16] if t.timestamp_exit else '' }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="7" class="empty">No trades yesterday</td></tr>
+            <tr><td colspan="8" class="empty">No trades yesterday</td></tr>
             {% endfor %}
         </table>
-        
+
         <h2>Historical Closed Trades ({{ closed.history|length }}) - PnL: ${{ "%.2f"|format(stats.history_closed_pnl) }}</h2>
         <table>
-            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Result</th><th>Time</th></tr>
+            <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>Lev</th><th>PnL</th><th>Result</th><th>Time</th></tr>
             {% for t in closed.history %}
             <tr>
                 <td class="{{ 'long' if t.direction == 'LONG' else 'short' }}">{{ t.direction }}</td>
                 <td>${{ "%.0f"|format(t.entry_price) }}</td>
                 <td>${{ "%.0f"|format(t.exit_price) }}</td>
                 <td>{{ "%.4f"|format(t.size) }}</td>
+                <td>{{ t.leverage }}x</td>
                 <td class="{{ 'green' if t.pnl_usd > 0 else 'red' }}">${{ "%.2f"|format(t.pnl_usd) }}</td>
                 <td>{{ t.outcome }}</td>
                 <td>{{ t.timestamp_exit[:16] if t.timestamp_exit else '' }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="7" class="empty">No historical trades</td></tr>
+            <tr><td colspan="8" class="empty">No historical trades</td></tr>
             {% endfor %}
         </table>
-        
+
         <p style="text-align:center; color:#555; margin-top:20px;">{{ last_update }}</p>
     </div>
 </body>
@@ -374,20 +382,20 @@ def api_open_trades():
     tm = get_trade_manager()
     if tm is None:
         return {"trades": [], "current_price": get_current_price()}
-    
+
     current_price = get_current_price()
     trades = []
-    
+
     for trade in tm.get_open_trades():
         entry = trade.get("entry_price", 0)
         size = trade.get("size", 0)
-        lev = 1
-        
+        lev = trade.get("leverage", 1) or 1
+
         if trade.get("side") == "buy":
             pnl = (current_price - entry) * size * lev
         else:
             pnl = (entry - current_price) * size * lev
-        
+
         trades.append({
             "id": trade.get("id"),
             "direction": "LONG" if trade.get("side") == "buy" else "SHORT",
@@ -397,7 +405,7 @@ def api_open_trades():
             "leverage": lev,
             "pnl": round(pnl, 2)
         })
-    
+
     return {"trades": trades, "current_price": current_price}
 
 
@@ -406,20 +414,22 @@ def api_closed_trades():
     tm = get_trade_manager()
     if tm is None:
         return {"trades": []}
-    
+
     trades = []
     for trade in tm.get_closed_trades():
+        lev = trade.get("leverage", 1) or 1
         trades.append({
             "id": trade.get("id"),
             "direction": "LONG" if trade.get("side") == "buy" else "SHORT",
             "entry_price": trade.get("entry_price", 0),
             "exit_price": trade.get("close_price") or 0,
             "size": trade.get("size", 0),
+            "leverage": lev,
             "pnl": trade.get("pnl") or 0,
             "timestamp_entry": trade.get("open_time", ""),
             "timestamp_exit": trade.get("close_time", "")
         })
-    
+
     return {"trades": trades}
 
 
@@ -433,15 +443,15 @@ def api_price():
     return {"price": get_current_price(), "timestamp": get_indian_time()}
 
 
-@app.route('/api/close/<int:trade_id>')
+@app.route('/api/close/<trade_id>')
 def api_close_trade(trade_id):
     tm = get_trade_manager()
     if tm is None:
         return {"success": False, "error": "TradeManager not available"}
-    
+
     try:
         current_price = get_current_price()
-        
+
         close_success = False
         if BOT_AVAILABLE and hasattr(config, 'DELTA_API_KEY') and config.DELTA_API_KEY:
             try:
@@ -455,12 +465,11 @@ def api_close_trade(trade_id):
                         break
             except:
                 pass
-        
-        trade = tm.close_trade(str(trade_id), current_price, datetime.now().isoformat(), 
-                             "MANUAL_CLOSE" if close_success else "MANUAL_DB_ONLY")
-        
+
+        trade = tm.close_trade(str(trade_id), current_price, "MANUAL_CLOSE" if close_success else "MANUAL_DB_ONLY")
+
         pnl = trade.get("pnl", 0) if trade else 0
-        
+
         return {"success": True, "pnl": round(pnl, 2), "exit_price": current_price, "exchange_closed": close_success}
     except Exception as e:
         return {"success": False, "error": str(e)}

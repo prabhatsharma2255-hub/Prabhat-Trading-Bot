@@ -13,18 +13,19 @@ trades_to_add = [
 conn = sqlite3.connect('trades.db')
 c = conn.cursor()
 
-for t in trades_to_add:
+for i, t in enumerate(trades_to_add):
     direction, entry, exit_price, size, pnl, outcome, setup, t_entry, t_exit = t
-    c.execute('''INSERT INTO trades 
-        (timestamp_entry, symbol, direction, regime, grade, module_used, 
-         entry_price, exit_price, size, pnl_usd, status, signals_fired, htf_aligned, session, leverage, stop_loss, take_profit)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-        (t_entry, "BTCUSD", direction, "bearish", setup, setup, entry, exit_price, size, pnl, "closed", setup, 0, "ny", 4, 0, 0))
+    trade_id = f"restored_{i}_{t_entry.replace(':', '').replace('-', '')}"
+    side = "buy" if direction == "LONG" else "sell"
+    c.execute('''INSERT INTO trades
+        (id, symbol, side, size, entry_price, close_price, tp, sl, leverage, pnl, status, close_reason, open_time, close_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        (trade_id, "BTCUSD", side, size, entry, exit_price, 0, 0, 4, pnl, "closed", outcome, t_entry, t_exit))
 
 conn.commit()
 print(f"Added {len(trades_to_add)} trades")
 
-c.execute("SELECT direction, entry_price, exit_price, pnl_usd, status, signals_fired FROM trades")
+c.execute("SELECT id, side, entry_price, close_price, pnl, status, close_reason FROM trades WHERE id LIKE 'restored_%'")
 for r in c.fetchall():
     print(r)
 
