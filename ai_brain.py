@@ -275,10 +275,16 @@ class AIBrain:
 
         return scalp_data
 
+    def _setup_blocked_by_open(self, setup_name: str, open_setups: List[str] = None) -> bool:
+        if not open_setups:
+            return False
+        count = sum(1 for s in open_setups if s == setup_name)
+        return count >= config.MAX_SAME_SETUP_TRADES
+
     def scan_setups(self, state: MarketState, velocity_data: Dict = None,
                  news_engine=None, move_detector=None, ltf_candles: List = None,
-                 scalp_data: Dict = None) -> List[SetupResult]:
-        """Scan for all 12 setups in priority order"""
+                 scalp_data: Dict = None, open_setups: List[str] = None) -> List[SetupResult]:
+        """Scan for all 12 setups"""
         results = []
 
         funding_data = None
@@ -286,42 +292,42 @@ class AIBrain:
             funding_data = move_detector.get_market_intelligence()
 
         # HIGH CONVICTION SWING (1-6)
-        result = self._setup_squeeze_breakout(state, ltf_candles)
+        result = self._setup_squeeze_breakout(state, ltf_candles, open_setups)
         results.append(result)
 
-        result = self._setup_liquidity_sweep(state, ltf_candles)
+        result = self._setup_liquidity_sweep(state, ltf_candles, open_setups)
         results.append(result)
 
-        result = self._setup_break_retest(state)
+        result = self._setup_break_retest(state, open_setups)
         results.append(result)
 
-        result = self._setup_trend_pullback(state, ltf_candles)
+        result = self._setup_trend_pullback(state, ltf_candles, open_setups)
         results.append(result)
 
-        result = self._setup_fibonacci(state)
+        result = self._setup_fibonacci(state, open_setups)
         results.append(result)
 
-        result = self._setup_vwap_reversion(state)
+        result = self._setup_vwap_reversion(state, open_setups)
         results.append(result)
 
-        # SCALPING (7-9) - pass scalp_data
-        result = self._setup_ribbon_scalp(state, scalp_data)
+        # SCALPING (7-9)
+        result = self._setup_ribbon_scalp(state, scalp_data, open_setups)
         results.append(result)
 
-        result = self._setup_volume_burst_scalp(state, scalp_data)
+        result = self._setup_volume_burst_scalp(state, scalp_data, open_setups)
         results.append(result)
 
-        result = self._setup_micro_bos_scalp(state, scalp_data)
+        result = self._setup_micro_bos_scalp(state, scalp_data, open_setups)
         results.append(result)
 
         # AGGRESSIVE (10-12)
-        result = self._setup_rocket_ride(state, velocity_data, ltf_candles, scalp_data)
+        result = self._setup_rocket_ride(state, velocity_data, ltf_candles, scalp_data, open_setups)
         results.append(result)
 
-        result = self._setup_news_spike(state, news_engine, ltf_candles)
+        result = self._setup_news_spike(state, news_engine, ltf_candles, open_setups)
         results.append(result)
 
-        result = self._setup_funding_squeeze(state, funding_data)
+        result = self._setup_funding_squeeze(state, funding_data, open_setups)
         results.append(result)
 
         return results
@@ -330,11 +336,14 @@ class AIBrain:
     # SCALP SETUPS (7-9)
     # ============================================================
 
-    def _setup_ribbon_scalp(self, state: MarketState, scalp_data: Dict = None) -> SetupResult:
+    def _setup_ribbon_scalp(self, state: MarketState, scalp_data: Dict = None, open_setups: List[str] = None) -> SetupResult:
         """SETUP 7: RIBBON MOMENTUM SCALP"""
         conditions = []
 
-        if self.scalp_trades_today >= 3:
+        if self._setup_blocked_by_open("RIBBON_SCALP", open_setups):
+            return SetupResult(False, "RIBBON_SCALP", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
+
+        if self.scalp_trades_today >= 4:
             return SetupResult(False, "RIBBON_SCALP", "NONE", 0, 0, 0, 0, 0, conditions, "max_ribbon_reached")
 
         if state.atr_ratio > 0.015:
@@ -388,11 +397,14 @@ class AIBrain:
 
         return SetupResult(False, "RIBBON_SCALP", "NONE", 0, 0, 0, 0, 0, conditions, "no_ribbon")
 
-    def _setup_volume_burst_scalp(self, state: MarketState, scalp_data: Dict = None) -> SetupResult:
+    def _setup_volume_burst_scalp(self, state: MarketState, scalp_data: Dict = None, open_setups: List[str] = None) -> SetupResult:
         """SETUP 8: VOLUME BURST CONTINUATION SCALP"""
         conditions = []
 
-        if self.scalp_trades_today >= 2:
+        if self._setup_blocked_by_open("VOLUME_BURST_SCALP", open_setups):
+            return SetupResult(False, "VOLUME_BURST_SCALP", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
+
+        if self.scalp_trades_today >= 3:
             return SetupResult(False, "VOLUME_BURST_SCALP", "NONE", 0, 0, 0, 0, 0, conditions, "max_burst_reached")
 
         volume_burst = scalp_data.get("volume_burst", False) if scalp_data else state.volume_burst
@@ -437,11 +449,14 @@ class AIBrain:
 
         return SetupResult(False, "VOLUME_BURST_SCALP", "NONE", 0, 0, 0, 0, 0, conditions, "no_burst")
 
-    def _setup_micro_bos_scalp(self, state: MarketState, scalp_data: Dict = None) -> SetupResult:
+    def _setup_micro_bos_scalp(self, state: MarketState, scalp_data: Dict = None, open_setups: List[str] = None) -> SetupResult:
         """SETUP 9: MICRO BOS SCALP (structure break scalp)"""
         conditions = []
 
-        if self.scalp_trades_today >= 2:
+        if self._setup_blocked_by_open("MICRO_BOS_SCALP", open_setups):
+            return SetupResult(False, "MICRO_BOS_SCALP", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
+
+        if self.scalp_trades_today >= 3:
             return SetupResult(False, "MICRO_BOS_SCALP", "NONE", 0, 0, 0, 0, 0, conditions, "max_micro_reached")
 
         session, _ = self.get_session()
@@ -495,9 +510,13 @@ class AIBrain:
     # ============================================================
 
     def _setup_rocket_ride(self, state: MarketState, velocity_data: Dict = None,
-                       candles: List = None, scalp_data: Dict = None) -> SetupResult:
+                       candles: List = None, scalp_data: Dict = None,
+                       open_setups: List[str] = None) -> SetupResult:
         """SETUP 10: ROCKET RIDE - Chase the Explosive Move"""
         conditions = []
+
+        if self._setup_blocked_by_open("ROCKET_RIDE", open_setups):
+            return SetupResult(False, "ROCKET_RIDE", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
 
         if not velocity_data:
             return SetupResult(False, "ROCKET_RIDE", "NONE", 0, 0, 0, 0, 0, conditions, "no_velocity_data")
@@ -596,9 +615,13 @@ class AIBrain:
             config.SETUP_ROCKET_RISK, config.SETUP_ROCKET_LEV,
             sl, tp, 0, conditions, "rocket_momentum")
 
-    def _setup_news_spike(self, state: MarketState, news_engine=None, candles: List = None) -> SetupResult:
+    def _setup_news_spike(self, state: MarketState, news_engine=None, candles: List = None,
+                      open_setups: List[str] = None) -> SetupResult:
         """SETUP 11: NEWS SPIKE TRADE - Pure Reaction Trade"""
         conditions = []
+
+        if self._setup_blocked_by_open("NEWS_SPIKE", open_setups):
+            return SetupResult(False, "NEWS_SPIKE", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
 
         if self.news_trades_today >= config.MAX_NEWS_TRADES:
             return SetupResult(False, "NEWS_SPIKE", "NONE", 0, 0, 0, 0, 0, conditions, "max_news_reached")
@@ -675,9 +698,13 @@ class AIBrain:
             config.SETUP_NEWS_SPIKE_RISK, leverage,
             sl, tp1, tp2, conditions, "news_spike")
 
-    def _setup_funding_squeeze(self, state: MarketState, funding_data: Dict = None) -> SetupResult:
+    def _setup_funding_squeeze(self, state: MarketState, funding_data: Dict = None,
+                            open_setups: List[str] = None) -> SetupResult:
         """SETUP 12: FUNDING RATE SQUEEZE - The Crowded Trade Snap"""
         conditions = []
+
+        if self._setup_blocked_by_open("FUNDING_SQUEEZE", open_setups):
+            return SetupResult(False, "FUNDING_SQUEEZE", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
 
         if not funding_data:
             funding_rate = 0
@@ -755,9 +782,13 @@ class AIBrain:
             config.SETUP_FUNDING_SQUEEZE_RISK, config.SETUP_FUNDING_SQUEEZE_LEV,
             sl, tp1, tp2, conditions, "funding_squeeze")
 
-    def _setup_squeeze_breakout(self, state: MarketState, candles: List = None) -> SetupResult:
+    def _setup_squeeze_breakout(self, state: MarketState, candles: List = None,
+                             open_setups: List[str] = None) -> SetupResult:
         """SQUEEZE BREAKOUT - Highest leverage setup"""
         conditions = []
+
+        if self._setup_blocked_by_open("SQUEEZE_BREAKOUT", open_setups):
+            return SetupResult(False, "SQUEEZE_BREAKOUT", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
 
         if state.squeeze_fired:
             conditions.append("squeeze_fired")
@@ -830,9 +861,13 @@ class AIBrain:
             reason="conditions_not_met" if conditions else "no_squeeze"
         )
 
-    def _setup_liquidity_sweep(self, state: MarketState, candles: List = None) -> SetupResult:
+    def _setup_liquidity_sweep(self, state: MarketState, candles: List = None,
+                            open_setups: List[str] = None) -> SetupResult:
         """LIQUIDITY SWEEP REVERSAL"""
         conditions = []
+
+        if self._setup_blocked_by_open("LIQUIDITY_SWEEP", open_setups):
+            return SetupResult(False, "LIQUIDITY_SWEEP", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
 
         if state.liq_sweep_bull:
             conditions.append("liq_sweep_bull")
@@ -926,9 +961,12 @@ class AIBrain:
             reason="no_sweep"
         )
 
-    def _setup_break_retest(self, state: MarketState) -> SetupResult:
+    def _setup_break_retest(self, state: MarketState, open_setups: List[str] = None) -> SetupResult:
         """BREAK AND RETEST"""
         conditions = []
+
+        if self._setup_blocked_by_open("BREAK_RETEST", open_setups):
+            return SetupResult(False, "BREAK_RETEST", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
 
         if state.last_event in ["BOS_bull", "BOS_bear"]:
             conditions.append("BOS_fired")
@@ -985,9 +1023,13 @@ class AIBrain:
             reason="no_recent_BOS"
         )
 
-    def _setup_trend_pullback(self, state: MarketState, candles: List = None) -> SetupResult:
+    def _setup_trend_pullback(self, state: MarketState, candles: List = None,
+                           open_setups: List[str] = None) -> SetupResult:
         """TREND CONTINUATION PULLBACK"""
         conditions = []
+
+        if self._setup_blocked_by_open("TREND_PULLBACK", open_setups):
+            return SetupResult(False, "TREND_PULLBACK", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
 
         if state.structure in ["bullish", "bearish"]:
             conditions.append("structure_ok")
@@ -1072,9 +1114,12 @@ class AIBrain:
             reason="no_trend_or_pullback"
         )
 
-    def _setup_fibonacci(self, state: MarketState) -> SetupResult:
+    def _setup_fibonacci(self, state: MarketState, open_setups: List[str] = None) -> SetupResult:
         """FIBONACCI GOLDEN RATIO"""
         conditions = []
+
+        if self._setup_blocked_by_open("FIBONACCI", open_setups):
+            return SetupResult(False, "FIBONACCI", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
 
         if state.at_fib and state.which_fib == 0.618:
             conditions.append("at_618")
@@ -1133,9 +1178,12 @@ class AIBrain:
             reason="not_at_618"
         )
 
-    def _setup_vwap_reversion(self, state: MarketState) -> SetupResult:
+    def _setup_vwap_reversion(self, state: MarketState, open_setups: List[str] = None) -> SetupResult:
         """VWAP MEAN REVERSION"""
         conditions = []
+
+        if self._setup_blocked_by_open("VWAP_REVERSION", open_setups):
+            return SetupResult(False, "VWAP_REVERSION", "NONE", 0, 0, 0, 0, 0, conditions, "already_open")
 
         if state.vwap_zone in ["extreme_high", "extreme_low"]:
             conditions.append("at_extreme")
@@ -1215,8 +1263,9 @@ class AIBrain:
 
     def analyze(self, ltf_candles: List[Dict], htf_candles: Optional[List[Dict]] = None,
             velocity_data: Dict = None, news_engine=None, move_detector=None,
-            scalp_1m_candles: List[Dict] = None, scalp_3m_candles: List[Dict] = None) -> Dict:
-        """Main analysis - run all indicators and scan all 12 setups"""
+            scalp_1m_candles: List[Dict] = None, scalp_3m_candles: List[Dict] = None,
+            open_setups: List[str] = None) -> Dict:
+        """Main analysis - run all indicators, score all setups, pick best"""
         indicators = Indicators(ltf_candles)
         state = indicators.get_all_indicators(htf_candles)
 
@@ -1224,48 +1273,30 @@ class AIBrain:
 
         can_trade, reason = self.can_trade()
 
-        # FIXED: Compute scalp data from 1m/3m candles for setups 7-9
         scalp_data = self._compute_scalp_data(ltf_candles, scalp_1m_candles, scalp_3m_candles)
 
-        # Scan all 12 setups with scalp data for setups 7-9
-        setups = self.scan_setups(state, velocity_data, news_engine, move_detector, ltf_candles, scalp_data)
+        setups = self.scan_setups(state, velocity_data, news_engine, move_detector, ltf_candles, scalp_data, open_setups)
 
+        # Score all triggered setups, pick the best by confidence
         triggered_setup = None
-        for result in setups:
-            if result.triggered:
-                triggered_setup = result
-                break
+        best_score = 0
+        scored = []
 
-        if triggered_setup and can_trade and can_trade_session:
-            htf_ok, htf_reason = self.check_htf_alignment(state.htf_bullish, triggered_setup.direction)
+        if can_trade and can_trade_session:
+            for result in setups:
+                if not result.triggered:
+                    continue
 
-            if not htf_ok:
-                triggered_setup = None
-                reason = f"htf_{htf_reason}"
+                score = self._score_setup(result, state)
 
-        # Apply sentiment modification
-        if triggered_setup and self.news_engine:
-            risk_mult, lev_boost, blocked = self.news_engine.get_sentiment_modifier(triggered_setup.direction)
+                if score > best_score:
+                    best_score = score
+                    triggered_setup = result
+                    scored.append((result.setup_name, score))
 
-            if blocked:
-                triggered_setup = None
-                reason = "sentiment_blocked"
-            else:
-                triggered_setup.risk_pct *= risk_mult
-                triggered_setup.leverage = min(triggered_setup.leverage + lev_boost, 10)
-
-        # Apply SESSION-BASED DYNAMIC AGGRESSION
-        if triggered_setup:
-            session_aggression = self.get_session_aggression()
-
-            session_leverage_mod = session_aggression["leverage_mod"]
-            session_risk_mult = session_aggression["max_daily_multiplier"]
-
-            triggered_setup.leverage = max(1, min(10, triggered_setup.leverage + session_leverage_mod))
-            triggered_setup.risk_pct *= session_risk_mult
-
-            logger.info(f"SESSION: {session_aggression['session']} | {session_aggression['description']}")
-            logger.info(f"Leverage adjusted: +{session_leverage_mod}x | Risk: {session_risk_mult}x")
+            if scored and len(scored) > 1:
+                names = ", ".join(f"{n}({s})" for n, s in scored)
+                logger.info(f"CONFIDENCE SCORES: {names} | Winner: {triggered_setup.setup_name} ({best_score})")
 
         if triggered_setup:
             self.trades_today += 1
@@ -1287,3 +1318,36 @@ class AIBrain:
             "skip_reason": reason if not triggered_setup else None,
             "all_setups": setups
         }
+
+    def _score_setup(self, setup: SetupResult, state: MarketState) -> int:
+        """Confidence score for a triggered setup. Higher = better."""
+        score = len(setup.conditions_met) * 10
+
+        if state.htf_bullish and setup.direction == "LONG":
+            score += 20
+        elif not state.htf_bullish and setup.direction == "SHORT":
+            score += 20
+
+        if state.vwap_event == "reclaim" and setup.direction == "LONG":
+            score += 15
+        elif state.vwap_event == "rejection" and setup.direction == "SHORT":
+            score += 15
+
+        if state.squeeze_fired:
+            score += 10
+
+        if state.rvol > 1.5:
+            score += 5
+        elif state.rvol < 0.5:
+            score -= 10
+
+        if state.atr_ratio < 0.02:
+            score += 5
+
+        if state.pattern in ["pin_bull", "pin_bear", "bull_engulf", "bear_engulf"]:
+            score += 10
+
+        if state.structure != "ranging":
+            score += 5
+
+        return max(score, 0)

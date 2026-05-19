@@ -93,13 +93,14 @@ SCALP_EMA_PERIODS = [5, 8, 13, 21]
 # DAILY LIMITS (COMBINED 12 SETUPS)
 # ============================================================
 
-MAX_TOTAL_TRADES_DAY = 30
-MAX_TRADES_PER_DAY = 30
-MAX_SWING_TRADES = 10       # setups 1-6, 12
-MAX_SCALP_TRADES = 15       # setups 7-9
-MAX_ROCKET_TRADES = 8      # setup 10
-MAX_NEWS_TRADES = 6       # setup 11
-MAX_OPEN_POSITIONS = 5
+MAX_TOTAL_TRADES_DAY = 25
+MAX_TRADES_PER_DAY = 25
+MAX_SWING_TRADES = 8        # setups 1-6, 12
+MAX_SCALP_TRADES = 10       # setups 7-9
+MAX_ROCKET_TRADES = 4       # setup 10
+MAX_NEWS_TRADES = 3         # setup 11
+MAX_OPEN_POSITIONS = 4
+MAX_SAME_SETUP_TRADES = 2   # max concurrent positions per setup
 MAX_DAILY_DD_PCT = 0.08    # 8%
 MAX_DAILY_RISK_TOTAL = 0.12
 

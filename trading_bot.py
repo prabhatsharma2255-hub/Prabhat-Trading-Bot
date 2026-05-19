@@ -309,7 +309,10 @@ class TradingBot:
         scalp_1m = self.get_market_data(config.TIMEFRAMES.get("scalp_1m", "1m"), config.SCALP_1M_CANDLES)
         scalp_3m = self.get_market_data(config.TIMEFRAMES.get("scalp_3m", "3m"), config.SCALP_3M_CANDLES)
 
-        # Pass news_engine, move_detector, and scalp candles
+        # Build list of currently open setup names for same-setup dedup
+        open_setups = [p.get("setup", "") for p in self.open_positions]
+
+        # Pass news_engine, move_detector, scalp candles, and open setups
         analysis = self.ai_brain.analyze(
             ltf_candles,
             htf_candles if htf_candles else None,
@@ -317,7 +320,8 @@ class TradingBot:
             self.news_engine,
             self.move_detector,
             scalp_1m_candles=scalp_1m if scalp_1m else None,
-            scalp_3m_candles=scalp_3m if scalp_3m else None
+            scalp_3m_candles=scalp_3m if scalp_3m else None,
+            open_setups=open_setups
         )
 
         state = analysis["state"]
@@ -393,10 +397,10 @@ class TradingBot:
 
         setup = analysis["setup"]
 
-        for pos in self.open_positions:
-            if pos.get("setup") == setup.setup_name:
-                logger.warning(f"BLOCKED: Setup {setup.setup_name} already open")
-                return False
+        same_setup_count = sum(1 for p in self.open_positions if p.get("setup") == setup.setup_name)
+        if same_setup_count >= config.MAX_SAME_SETUP_TRADES:
+            logger.warning(f"BLOCKED: Setup {setup.setup_name} already has {same_setup_count} open (max {config.MAX_SAME_SETUP_TRADES})")
+            return False
 
         logger.info(f"TRADE READY: {setup.setup_name} {setup.direction} SL={setup.stop_loss:.0f} TP={setup.tp2:.0f}")
 
@@ -507,10 +511,9 @@ class TradingBot:
                 except:
                     pass
 
-            # Also save to TradeManager for dashboard sync
+            # Also save to TradeManager for dashboard sync (same trade_id)
             if self.trade_manager:
                 try:
-                    trade_id = f"trade_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}"
                     side = "buy" if direction == "LONG" else "sell"
 
                     self.trade_manager.save_trade({
@@ -524,9 +527,6 @@ class TradingBot:
                         "leverage": setup.leverage,
                         "open_time": datetime.now(IST).isoformat()
                     })
-
-                    # Store trade_id in position for later reference
-                    position["trade_id"] = trade_id
                 except Exception as e:
                     logger.warning(f"TradeManager save failed: {e}")
 
