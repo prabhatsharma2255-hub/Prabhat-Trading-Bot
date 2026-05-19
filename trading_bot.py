@@ -15,6 +15,7 @@ import threading
 
 import config
 from delta_client import DeltaClient
+from paper_engine import PaperEngine
 from indicators import Indicators
 from ai_brain import AIBrain
 from flask import Flask, jsonify
@@ -90,7 +91,10 @@ logger = logging.getLogger(__name__)
 
 class TradingBot:
     def __init__(self, api_key: str, api_secret: str):
-        self.client = DeltaClient(api_key, api_secret)
+        if config.DRY_RUN:
+            self.client = PaperEngine(api_key, api_secret, config.STARTING_CAPITAL)
+        else:
+            self.client = DeltaClient(api_key, api_secret)
 
         self.news_engine = None
         self.move_detector = None
