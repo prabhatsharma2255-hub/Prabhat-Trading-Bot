@@ -19,8 +19,8 @@ echo "Bot started with PID: $BOT_PID"
 echo "Waiting for bot to initialize..."
 sleep 10
 
-echo "Starting Flask web dashboard (WebSocket) on port $PORT..."
-gunicorn web_dashboard:app --bind 0.0.0.0:$PORT --worker-class eventlet --workers 1 --timeout 120 --log-level info &
+echo "Starting Flask web dashboard on port $PORT..."
+gunicorn web_dashboard:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --log-level info --threads 4 &
 FLASK_PID=$!
 echo "Flask dashboard started with PID: $FLASK_PID"
 
