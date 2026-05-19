@@ -38,17 +38,22 @@ TRADES_FILE = "trades.db"
 _last_price = [0]
 _price_lock = threading.Lock()
 
+def _cached_price_updater():
+    while True:
+        try:
+            r = requests.get("https://api.india.delta.exchange/v2/tickers/BTCUSD", timeout=5)
+            data = r.json()
+            if data and "result" in data:
+                price = float(data["result"].get("close", 0))
+                with _price_lock:
+                    _last_price[0] = price
+        except:
+            pass
+        time.sleep(10)
+
+threading.Thread(target=_cached_price_updater, daemon=True).start()
+
 def get_current_price():
-    try:
-        r = requests.get("https://api.india.delta.exchange/v2/tickers/BTCUSD", timeout=5)
-        data = r.json()
-        if data and "result" in data:
-            price = float(data["result"].get("close", 0))
-            with _price_lock:
-                _last_price[0] = price
-            return price
-    except:
-        pass
     with _price_lock:
         return _last_price[0]
 
