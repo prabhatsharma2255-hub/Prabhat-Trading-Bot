@@ -147,6 +147,7 @@ HTML = """
 <html>
 <head>
     <title>Delta Trading Bot</title>
+    <meta charset="utf-8">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial; background: #0a0a0f; color: #ddd; padding: 20px; }
@@ -181,6 +182,11 @@ HTML = """
         .msg.green { background: #0c622; color: #0c6; display: block; }
         .msg.red { background: #442; color: #f44; display: block; }
         #footer { text-align: center; color: #333; font-size: 11px; margin-top: 20px; }
+        .tab-bar { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+        .tab { background: #151520; color: #888; border: 1px solid #222; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .tab.active { background: #0c6; color: #000; border-color: #0c6; font-weight: bold; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
         @media (max-width: 600px) {
             body { padding: 10px; }
             .stats { grid-template-columns: repeat(3, 1fr); }
@@ -214,14 +220,26 @@ HTML = """
     <div class="section-title">Open Positions <span id="open-count" style="color:#888;font-weight:normal;"></span></div>
     <table><thead><tr><th>Dir</th><th>Entry</th><th>Size</th><th>Lev</th><th>SL</th><th>TP</th><th>PnL</th><th></th></tr></thead><tbody id="open-body"></tbody></table>
 
-    <div class="section-title">Today's Closed Trades <span id="today-info" style="color:#888;font-weight:normal;"></span></div>
-    <table><thead><tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>Lev</th><th>PnL</th><th>Result</th><th>Time</th></tr></thead><tbody id="today-body"></tbody></table>
+    <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('today')">Today</div>
+        <div class="tab" onclick="switchTab('yesterday')">Yesterday</div>
+        <div class="tab" onclick="switchTab('all')">All Closed</div>
+    </div>
 
-    <div class="section-title">Yesterday <span id="yesterday-info" style="color:#888;font-weight:normal;"></span></div>
-    <table><thead><tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>Lev</th><th>PnL</th><th>Result</th><th>Time</th></tr></thead><tbody id="yesterday-body"></tbody></table>
+    <div id="tab-today" class="tab-content active">
+        <div class="section-title">Today's Closed Trades <span id="today-info" style="color:#888;font-weight:normal;"></span></div>
+        <table><thead><tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>Lev</th><th>PnL</th><th>Result</th><th>Time</th></tr></thead><tbody id="today-body"></tbody></table>
+    </div>
 
-    <div class="section-title">History <span id="history-info" style="color:#888;font-weight:normal;"></span></div>
-    <table><thead><tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>Lev</th><th>PnL</th><th>Result</th><th>Time</th></tr></thead><tbody id="history-body"></tbody></table>
+    <div id="tab-yesterday" class="tab-content">
+        <div class="section-title">Yesterday <span id="yesterday-info" style="color:#888;font-weight:normal;"></span></div>
+        <table><thead><tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>Lev</th><th>PnL</th><th>Result</th><th>Time</th></tr></thead><tbody id="yesterday-body"></tbody></table>
+    </div>
+
+    <div id="tab-all" class="tab-content">
+        <div class="section-title">All Closed Trades <span id="all-info" style="color:#888;font-weight:normal;"></span></div>
+        <table><thead><tr><th>Dir</th><th>Entry</th><th>Exit</th><th>Size</th><th>Lev</th><th>PnL</th><th>Result</th><th>Time</th></tr></thead><tbody id="all-body"></tbody></table>
+    </div>
 
     <div id="footer"></div>
 </div>
@@ -234,75 +252,88 @@ function fetchData() {
     fetch('/api/all')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            retryCount = 0;
-            document.getElementById('status-dot').className = 'dot green';
-            document.getElementById('status-text').textContent = 'live';
+            try {
+                retryCount = 0;
+                document.getElementById('status-dot').className = 'dot green';
+                document.getElementById('status-text').textContent = 'live';
 
-            const s = d.stats;
-            const price = d.price;
+                var s = d.stats || {};
+                var price = typeof d.price === 'number' ? d.price : 0;
 
-            // Price
-            const priceEl = document.getElementById('price');
-            const oldP = lastPrice || price;
-            priceEl.textContent = price.toFixed(2);
-            const diff = price - oldP;
-            const changeEl = document.getElementById('change');
-            if (diff !== 0 && lastPrice > 0) {
-                changeEl.textContent = (diff > 0 ? '+' : '') + diff.toFixed(2) + ' (' + (diff > 0 ? '+' : '') + (diff/oldP*100).toFixed(2) + '%)';
-                changeEl.style.color = diff > 0 ? '#0c6' : '#f44';
-            } else {
-                changeEl.textContent = '';
+                // Price
+                var priceEl = document.getElementById('price');
+                var oldP = lastPrice || price;
+                priceEl.textContent = price.toFixed(2);
+                var diff = price - oldP;
+                var changeEl = document.getElementById('change');
+                if (diff !== 0 && lastPrice > 0) {
+                    changeEl.textContent = (diff > 0 ? '+' : '') + diff.toFixed(2) + ' (' + (diff > 0 ? '+' : '') + (diff/oldP*100).toFixed(2) + '%)';
+                    changeEl.style.color = diff > 0 ? '#0c6' : '#f44';
+                } else {
+                    changeEl.textContent = '';
+                }
+                lastPrice = price;
+
+                // Stats
+                setStat('s-total', '$' + (s.total_pnl || 0).toFixed(2), s.total_pnl || 0);
+                setStat('s-unreal', '$' + (s.unrealized_pnl || 0).toFixed(2), s.unrealized_pnl || 0);
+                setStat('s-daily', '$' + (s.daily_pnl || 0).toFixed(2), s.daily_pnl || 0);
+                document.getElementById('s-trades').textContent = s.total_trades || 0;
+                document.getElementById('s-winrate').textContent = (s.win_rate || 0) + '%';
+                document.getElementById('s-open').textContent = s.open_positions || 0;
+
+                // Open positions
+                var openList = d.open || [];
+                var openBody = document.getElementById('open-body');
+                document.getElementById('open-count').textContent = '(' + openList.length + ')';
+                if (openList.length === 0) {
+                    openBody.innerHTML = '<tr><td colspan="8" class="empty">No open positions</td></tr>';
+                } else {
+                    openBody.innerHTML = openList.map(function(t) {
+                        var cls = t.direction === 'LONG' ? 'long' : 'short';
+                        var pnlCls = t.pnl >= 0 ? 'green' : 'red';
+                        return '<tr><td class="' + cls + '">' + (t.direction || '') + '</td>'
+                            + '<td>$' + (t.entry || 0).toFixed(0) + '</td>'
+                            + '<td>' + (t.size || 0).toFixed(4) + '</td>'
+                            + '<td>' + (t.leverage || 0) + 'x</td>'
+                            + '<td>$' + (t.sl || 0).toFixed(0) + '</td>'
+                            + '<td>$' + (t.tp || 0).toFixed(0) + '</td>'
+                            + '<td class="' + pnlCls + '">$' + (t.pnl || 0).toFixed(2) + '</td>'
+                            + '<td><button onclick="closeTrade(\'' + (t.id || '') + '\')" class="btn">X</button></td></tr>';
+                    }).join('');
+                }
+
+                // Closed trades
+                var c = d.closed || {};
+                var todayList = c.today || [];
+                var yesterdayList = c.yesterday || [];
+                var allList = [].concat(todayList, c.yesterday || [], c.history || []);
+                document.getElementById('today-info').textContent = todayList.length + ' trades | PnL: $' + (s.daily_pnl || 0).toFixed(2);
+                document.getElementById('today-body').innerHTML = renderClosed(todayList);
+                document.getElementById('yesterday-info').textContent = yesterdayList.length + ' trades';
+                document.getElementById('yesterday-body').innerHTML = renderClosed(yesterdayList);
+                document.getElementById('all-info').textContent = allList.length + ' trades total';
+                document.getElementById('all-body').innerHTML = renderClosed(allList);
+
+                document.getElementById('footer').textContent = d.timestamp || '';
+            } catch(e) {
+                console.error('Dashboard render error:', e);
             }
-            lastPrice = price;
-
-            // Stats
-            setStat('s-total', '$' + s.total_pnl.toFixed(2), s.total_pnl);
-            setStat('s-unreal', '$' + s.unrealized_pnl.toFixed(2), s.unrealized_pnl);
-            setStat('s-daily', '$' + s.daily_pnl.toFixed(2), s.daily_pnl);
-            document.getElementById('s-trades').textContent = s.total_trades;
-            document.getElementById('s-winrate').textContent = s.win_rate + '%';
-            document.getElementById('s-open').textContent = s.open_positions;
-
-            // Open positions
-            const openBody = document.getElementById('open-body');
-            document.getElementById('open-count').textContent = '(' + d.open.length + ')';
-            if (d.open.length === 0) {
-                openBody.innerHTML = '<tr><td colspan="8" class="empty">No open positions</td></tr>';
-            } else {
-                openBody.innerHTML = d.open.map(function(t) {
-                    const cls = t.direction === 'LONG' ? 'long' : 'short';
-                    const pnlCls = t.pnl >= 0 ? 'green' : 'red';
-                    return '<tr><td class="' + cls + '">' + t.direction + '</td>'
-                        + '<td>$' + t.entry.toFixed(0) + '</td>'
-                        + '<td>' + t.size.toFixed(4) + '</td>'
-                        + '<td>' + t.leverage + 'x</td>'
-                        + '<td>$' + (t.sl || 0).toFixed(0) + '</td>'
-                        + '<td>$' + (t.tp || 0).toFixed(0) + '</td>'
-                        + '<td class="' + pnlCls + '">$' + t.pnl.toFixed(2) + '</td>'
-                        + '<td><button onclick="closeTrade(\'' + t.id + '\')" class="btn">X</button></td></tr>';
-                }).join('');
-            }
-
-            // Closed trades
-            const c = d.closed;
-            document.getElementById('today-info').textContent = c.today.length + ' trades | PnL: $' + s.daily_pnl.toFixed(2);
-            document.getElementById('today-body').innerHTML = renderClosed(c.today);
-            document.getElementById('yesterday-info').textContent = c.yesterday.length + ' trades';
-            document.getElementById('yesterday-body').innerHTML = renderClosed(c.yesterday);
-            document.getElementById('history-info').textContent = c.history.length + ' trades';
-            document.getElementById('history-body').innerHTML = renderClosed(c.history);
-
-            document.getElementById('footer').textContent = d.timestamp;
         })
         .catch(function() {
             retryCount++;
-            document.getElementById('status-dot').className = 'dot ' + (retryCount > 5 ? 'red' : 'yellow');
-            document.getElementById('status-text').textContent = retryCount > 5 ? 'offline' : 'retrying...';
+            var dotEl = document.getElementById('status-dot');
+            var textEl = document.getElementById('status-text');
+            if (dotEl && textEl) {
+                dotEl.className = 'dot ' + (retryCount > 5 ? 'red' : 'yellow');
+                textEl.textContent = retryCount > 5 ? 'offline' : 'retrying...';
+            }
         });
 }
 
 function setStat(id, text, val) {
-    const el = document.getElementById(id);
+    var el = document.getElementById(id);
+    if (!el) return;
     el.textContent = text;
     el.className = 'val ' + (val >= 0 ? 'green' : 'red');
 }
@@ -310,32 +341,46 @@ function setStat(id, text, val) {
 function renderClosed(trades) {
     if (!trades || trades.length === 0) return '<tr><td colspan="8" class="empty">No trades</td></tr>';
     return trades.map(function(t) {
-        const cls = t.direction === 'LONG' ? 'long' : 'short';
-        const pnlCls = t.pnl_usd >= 0 ? 'green' : 'red';
-        return '<tr><td class="' + cls + '">' + t.direction + '</td>'
-            + '<td>$' + t.entry_price.toFixed(0) + '</td>'
-            + '<td>$' + t.exit_price.toFixed(0) + '</td>'
-            + '<td>' + t.size.toFixed(4) + '</td>'
-            + '<td>' + t.leverage + 'x</td>'
-            + '<td class="' + pnlCls + '">$' + t.pnl_usd.toFixed(2) + '</td>'
+        var cls = t.direction === 'LONG' ? 'long' : 'short';
+        var pnlVal = t.pnl_usd || 0;
+        var pnlCls = pnlVal >= 0 ? 'green' : 'red';
+        return '<tr><td class="' + cls + '">' + (t.direction || '') + '</td>'
+            + '<td>$' + (t.entry_price || 0).toFixed(0) + '</td>'
+            + '<td>$' + (t.exit_price || 0).toFixed(0) + '</td>'
+            + '<td>' + (t.size || 0).toFixed(4) + '</td>'
+            + '<td>' + (t.leverage || 0) + 'x</td>'
+            + '<td class="' + pnlCls + '">$' + pnlVal.toFixed(2) + '</td>'
             + '<td>' + (t.result || '') + '</td>'
             + '<td>' + (t.time ? t.time.substring(0, 16) : '') + '</td></tr>';
     }).join('');
 }
 
 function closeTrade(id) {
-    const btn = document.querySelector('button[onclick*="' + id + '"]');
+    if (!id) return;
+    var btn = document.querySelector('button[onclick*="' + id + '"]');
     if (btn) btn.disabled = true;
     fetch('/api/close/' + id)
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            const msg = document.getElementById('msg');
+            var msg = document.getElementById('msg');
+            if (!msg) return;
             msg.className = 'msg ' + (d.success ? 'green' : 'red');
             msg.textContent = d.success ? 'Closed! PnL: $' + d.pnl.toFixed(2) : 'Error: ' + (d.error || 'unknown');
             msg.style.display = 'block';
             setTimeout(function() { msg.style.display = 'none'; }, 4000);
             fetchData();
         });
+}
+
+function switchTab(name) {
+    var tabs = document.querySelectorAll('.tab');
+    for (var i = 0; i < tabs.length; i++) tabs[i].className = 'tab';
+    var contents = document.querySelectorAll('.tab-content');
+    for (var i = 0; i < contents.length; i++) contents[i].className = 'tab-content';
+    var activeTab = document.querySelector('.tab[onclick*="' + name + '"]');
+    if (activeTab) activeTab.className = 'tab active';
+    var activeContent = document.getElementById('tab-' + name);
+    if (activeContent) activeContent.className = 'tab-content active';
 }
 
 // Fetch immediately, then every 3 seconds
@@ -354,7 +399,16 @@ def index():
 
 @app.route('/api/all')
 def api_all():
-    return jsonify(get_all_data())
+    try:
+        return jsonify(get_all_data())
+    except Exception as e:
+        return jsonify({
+            "price": get_current_price(),
+            "stats": {"total_pnl": 0, "daily_pnl": 0, "total_trades": 0, "wins": 0, "win_rate": 0, "open_positions": 0, "unrealized_pnl": 0},
+            "open": [], "closed": {"today": [], "yesterday": [], "history": []},
+            "timestamp": fmt_ist(),
+            "error": str(e)
+        })
 
 
 @app.route('/close/<trade_id>')
