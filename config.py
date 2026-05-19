@@ -7,8 +7,8 @@ import os
 
 # API Configuration
 # IMPORTANT: Set these as environment variables! NEVER commit real keys.
-BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "W8Omy6yMHj312Hy0pq")
-BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "wdT5kGGO7wGsprVPNDcmsPrFzo86Gr233uS4")
+BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "ogrEfpwUxNnuufk9rr")
+BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "fqc4YSsfzzsvBO0oWXndbJKMkUWZvid9JRyq")
 
 # Live trading enabled
 if not BYBIT_API_KEY or not BYBIT_API_SECRET:
