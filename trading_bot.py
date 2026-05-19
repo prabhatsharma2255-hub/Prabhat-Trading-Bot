@@ -7,6 +7,8 @@ Works with 12 named setups + News Intelligence + Move Detection
 import time
 import logging
 import sqlite3
+import os
+import json
 from datetime import datetime, timezone, timedelta
 from logging.handlers import RotatingFileHandler
 
@@ -142,6 +144,7 @@ class TradingBot:
 
         # Load open trades from database
         self._load_open_trades_from_db()
+        self._load_open_positions_state()
 
         if not config.DRY_RUN:
             self._sync_positions()
@@ -496,6 +499,8 @@ class TradingBot:
             })
             position["trade_id"] = trade_id
 
+            self._save_open_positions_state()
+
             # Log to dashboard (if available)
             if dashboard:
                 try:
@@ -652,6 +657,7 @@ class TradingBot:
 
                 logger.info(f"Trade closed: {reason} | PnL: ${pnl:.2f} | Exit: ${current_price}")
                 update_api_trades()
+                self._save_open_positions_state()
 
     def _load_open_trades_from_db(self):
         """Load open trades from database on startup"""
@@ -681,6 +687,70 @@ class TradingBot:
                 })
         except Exception as e:
             logger.warning(f"Failed to load open trades: {e}")
+
+    def _get_bot_state_path(self):
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_state.json")
+
+    def _save_open_positions_state(self):
+        """Save current open positions to JSON file for dashboard access"""
+        try:
+            path = self._get_bot_state_path()
+            data = {
+                "open_positions": [
+                    {
+                        "trade_id": p.get("trade_id", ""),
+                        "direction": p.get("direction", "SHORT"),
+                        "entry_price": p.get("entry_price", 0),
+                        "size": p.get("size", 0),
+                        "leverage": p.get("leverage", 1),
+                        "stop_loss": p.get("stop_loss", 0),
+                        "take_profit_1": p.get("take_profit_1", 0),
+                        "take_profit_2": p.get("take_profit_2", 0),
+                        "setup": p.get("setup", ""),
+                        "opened_at": p.get("opened_at", ""),
+                        "pnl": self._calc_unrealized_pnl(p)
+                    } for p in self.open_positions
+                ],
+                "balance": self.balance,
+                "updated": datetime.now(IST).isoformat()
+            }
+            with open(path, "w") as f:
+                json.dump(data, f)
+        except Exception as e:
+            logger.warning(f"Failed to save open positions state: {e}")
+
+    def _calc_unrealized_pnl(self, pos):
+        try:
+            entry = pos.get("entry_price", 0)
+            size = pos.get("size", 0)
+            lev = pos.get("leverage", 1)
+            direction = pos.get("direction", "SHORT")
+            if entry <= 0 or size <= 0:
+                return 0
+            price = self.client.get_market_data().get("last_price", 0)
+            if direction == "LONG":
+                return round((price - entry) * size * lev, 2)
+            else:
+                return round((entry - price) * size * lev, 2)
+        except:
+            return 0
+
+    def _load_open_positions_state(self):
+        """Load open positions from JSON file if DB is empty"""
+        try:
+            path = self._get_bot_state_path()
+            if not os.path.exists(path):
+                return
+            with open(path) as f:
+                data = json.load(f)
+            if self.open_positions:
+                return
+            for p in data.get("open_positions", []):
+                self.open_positions.append(p)
+            if self.open_positions:
+                logger.info(f"Restored {len(self.open_positions)} open positions from state file")
+        except:
+            pass
 
     def _start_background_sync(self):
         """Start background thread to sync with exchange every 3 seconds"""

@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import threading
+import json
 from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,6 +23,8 @@ try:
     BOT_AVAILABLE = True
 except:
     BOT_AVAILABLE = False
+
+BOT_STATE_FILE = "bot_state.json"
 
 IST = timedelta(hours=5, minutes=30)
 
@@ -62,6 +65,28 @@ def get_trade_manager():
         return None
     return TradeManager()
 
+def get_bot_open_positions():
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), BOT_STATE_FILE)
+        if os.path.exists(path):
+            with open(path) as f:
+                data = json.load(f)
+            return data.get("open_positions", [])
+    except:
+        pass
+    return []
+
+def get_bot_balance():
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), BOT_STATE_FILE)
+        if os.path.exists(path):
+            with open(path) as f:
+                data = json.load(f)
+            return data.get("balance", 0)
+    except:
+        pass
+    return 0
+
 def get_closed_trades():
     tm = get_trade_manager()
     if tm is None:
@@ -94,12 +119,25 @@ def get_closed_trades():
 def get_all_data():
     price = get_current_price()
     tm = get_trade_manager()
-    if tm is None:
+
+    bot_open = get_bot_open_positions()
+    db_open = tm.get_open_trades() if tm else []
+
+    if bot_open and len(bot_open) > len(db_open):
+        open_trades = bot_open
+    elif db_open:
+        open_trades = db_open
+    else:
+        open_trades = []
+
+    if tm is None and not bot_open:
         return {"price": price, "stats": {"total_pnl": 0, "daily_pnl": 0, "total_trades": 0, "wins": 0, "win_rate": 0, "open_positions": 0, "unrealized_pnl": 0},
                 "open": [], "closed": get_closed_trades(), "timestamp": fmt_ist()}
 
-    open_trades = tm.get_open_trades()
-    closed_trades = tm.get_closed_trades()
+    if tm:
+        closed_trades = tm.get_closed_trades()
+    else:
+        closed_trades = []
 
     total_pnl = sum(t.get("pnl", 0) or 0 for t in closed_trades)
     wins = sum(1 for t in closed_trades if (t.get("pnl") or 0) > 0)
@@ -112,30 +150,35 @@ def get_all_data():
     daily_pnl = sum(t.get("pnl", 0) or 0 for t in today_closed)
 
     unrealized = 0
-    for t in open_trades:
-        lev = t.get("leverage", 1) or 1
-        sz = t.get("size", 0) or 0
-        entry = t.get("entry_price", 0)
-        if t.get("side") == "buy":
-            unrealized += (price - entry) * sz * lev
-        else:
-            unrealized += (entry - price) * sz * lev
-
     open_list = []
+
     for t in open_trades:
-        lev = t.get("leverage", 1) or 1
-        sz = t.get("size", 0) or 0
-        entry = t.get("entry_price", 0)
-        side = t.get("side", "sell")
-        if side == "buy":
-            pnl = (price - entry) * sz * lev
+        if "pnl" in t and isinstance(t, dict) and "entry_price" in t:
+            lev = t.get("leverage", 1) or 1
+            sz = t.get("size", 0) or 0
+            entry = t.get("entry_price", 0)
+            pnl_val = t.get("pnl", 0) or 0
+            direction = t.get("direction", t.get("side", "sell"))
+            if isinstance(direction, str) and direction.lower() in ["buy", "long"]:
+                unrealized += (price - entry) * sz * lev
+            else:
+                unrealized += (entry - price) * sz * lev
+            open_list.append({
+                "id": t.get("trade_id", t.get("id", "")), "direction": direction,
+                "entry": entry, "size": sz, "leverage": lev,
+                "sl": t.get("stop_loss", t.get("sl", 0)), "tp": t.get("take_profit_2", t.get("tp", 0)), "pnl": round(pnl_val, 2)
+            })
         else:
-            pnl = (entry - price) * sz * lev
-        open_list.append({
-            "id": t.get("id"), "direction": "LONG" if side == "buy" else "SHORT",
-            "entry": entry, "size": sz, "leverage": lev,
-            "sl": t.get("sl", 0), "tp": t.get("tp", 0), "pnl": round(pnl, 2)
-        })
+            side = t.get("side", "sell")
+            if side == "buy":
+                pnl = (price - t.get("entry_price", 0)) * (t.get("size", 0) or 0) * (t.get("leverage", 1) or 1)
+            else:
+                pnl = (t.get("entry_price", 0) - price) * (t.get("size", 0) or 0) * (t.get("leverage", 1) or 1)
+            open_list.append({
+                "id": t.get("id", ""), "direction": "LONG" if side == "buy" else "SHORT",
+                "entry": t.get("entry_price", 0), "size": t.get("size", 0) or 0, "leverage": t.get("leverage", 1) or 1,
+                "sl": t.get("sl", 0), "tp": t.get("tp", 0), "pnl": round(pnl, 2)
+            })
 
     return {
         "price": price,
