@@ -13,11 +13,11 @@ from trading_bot import TradingBot
 
 
 def main():
-    api_key = config.BINANCE_API_KEY
-    api_secret = config.BINANCE_API_SECRET
+    api_key = config.BYBIT_API_KEY
+    api_secret = config.BYBIT_API_SECRET
 
     print("=" * 60)
-    print("BINANCE FUTURES AI TRADING BOT - SETUP BASED")
+    print("BYBIT USDT PERPETUAL AI TRADING BOT - SETUP BASED")
     print("=" * 60)
     print(f"Mode: {'DRY RUN' if config.DRY_RUN else 'LIVE TRADING'}")
     print(f"Symbol: {config.SYMBOL}")

@@ -14,13 +14,13 @@ from typing import Dict, List, Optional
 from collections import deque
 
 import config
-from binance_client import BinanceClient
+from bybit_client import BybitClient
 
 logger = logging.getLogger(__name__)
 
 
 class MoveDetector:
-    def __init__(self, client: BinanceClient):
+    def __init__(self, client: BybitClient):
         self.client = client
         self.price_history: deque = deque(maxlen=20)
         self.volume_history: deque = deque(maxlen=20)
@@ -144,7 +144,7 @@ class MoveDetector:
 
         try:
             # FIXED: Use correct API domain
-            url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
+            url = "https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT"
             response = requests.get(url, timeout=10)
 
             if response.status_code == 200:
@@ -176,12 +176,13 @@ class MoveDetector:
 
         try:
             # FIXED: Use correct API domain
-            url = "https://fapi.binance.com/fapi/v2/openInterest?symbol=BTCUSDT"
+            url = "https://api.bybit.com/v5/market/open-interest?category=linear&symbol=BTCUSDT&intervalTime=1h"
             response = requests.get(url, timeout=10)
 
             if response.status_code == 200:
                 data = response.json()
-                current_oi = float(data.get("openInterest", 0) or 0)
+                if data.get("list"):
+                    current_oi = float(data["list"][0].get("openInterest", 0) or 0)
 
                 if self.oi_history:
                     prev_oi = self.oi_history[-1]

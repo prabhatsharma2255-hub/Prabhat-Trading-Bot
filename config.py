@@ -1,5 +1,5 @@
 """
-Binance Futures Trading Bot - Complete System
+Bybit USDT Perpetual Trading Bot - Complete System
 12 SETUPS: 6 swing + 3 scalp + 3 aggressive
 """
 
@@ -7,15 +7,15 @@ import os
 
 # API Configuration
 # IMPORTANT: Set these as environment variables! NEVER commit real keys.
-BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "plJTwnu03gglJF0bHXZ9YxaE15nCDx1GwFLAvl3mqJJXwWvcwWFuHLLy3X4XwoG3")
-BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "1AHR88BGpN8aDYN9cyhBOUgvJYMAAiVnOtTBZOhYQplQx19Tr0GyXRkBdMcUxOus")
+BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "W8Omy6yMHj312Hy0pq")
+BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "wdT5kGGO7wGsprVPNDcmsPrFzo86Gr233uS4")
 
-# If keys are empty, we'll use dry run mode by default
-if not BINANCE_API_KEY or not BINANCE_API_SECRET:
-    print("WARNING: Binance API keys not set! Using DRY RUN mode.")
+# Live trading enabled
+if not BYBIT_API_KEY or not BYBIT_API_SECRET:
+    print("WARNING: Bybit API keys not set! Using DRY RUN mode.")
     DRY_RUN = True
 else:
-    print("Binance API keys loaded. Real trading enabled.")
+    print("Bybit API keys loaded. LIVE TRADING ENABLED.")
     DRY_RUN = False
 
 # Symbol
@@ -179,8 +179,8 @@ MODE2_SUSPEND_CONSEC_LOSSES = 3  # Suspend Mode 2 after 3 losses
 # EXECUTION
 # ============================================================
 
-# Base URL for Binance USD-M Futures API
-BASE_URL = "https://fapi.binance.com"
+# Base URL for Bybit USDT Perpetual API
+BASE_URL = "https://api.bybit.com"
 
 POLLING_INTERVAL = 10  # Real-time (10 seconds)
 TIMEFRAMES = {

@@ -37,10 +37,10 @@ def log_trade(direction, entry_price, exit_price, size, pnl, status, confidence=
 
 def get_live_price():
     try:
-        r = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=2)
+        r = requests.get("https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT", timeout=2)
         data = r.json()
-        if data and "price" in data:
-            return float(data["price"])
+        if data and data.get("list"):
+            return float(data["list"][0].get("lastPrice", 0))
     except:
         return 0
     return 0

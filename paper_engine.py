@@ -1,6 +1,6 @@
 """
 PaperEngine - Simulated paper trading engine
-Wraps BinanceClient to simulate fills, slippage, fees, and balance tracking
+Wraps BybitClient to simulate fills, slippage, fees, and balance tracking
 """
 
 import time
@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Any
 from threading import Lock
 
 import config
-from binance_client import BinanceClient
+from bybit_client import BybitClient
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +28,14 @@ PAPER_STATE_FILE = "paper_state.json"
 
 
 class PaperEngine:
-    """Simulated trading engine. Drop-in for BinanceClient in DRY_RUN mode.
+    """Simulated trading engine. Drop-in for BybitClient in DRY_RUN mode.
 
     All data methods (get_candles, get_ticker, get_market_data, etc.)
-    delegate to the real BinanceClient. Only trading methods are simulated.
+    delegate to the real BybitClient. Only trading methods are simulated.
     """
 
     def __init__(self, api_key: str, api_secret: str, initial_balance: float = 100.0):
-        self._real = BinanceClient(api_key, api_secret)
+        self._real = BybitClient(api_key, api_secret)
         self._lock = Lock()
 
         self.initial_balance = initial_balance
@@ -127,7 +127,7 @@ class PaperEngine:
         md = self._real.get_market_data()
         return md.get("mark_price", 0) or md.get("last_price", 0)
 
-    # ---- BinanceClient passthrough methods ----
+    # ---- BybitClient passthrough methods ----
 
     def get_candles(self, symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
         return self._real.get_candles(symbol, timeframe, limit)
