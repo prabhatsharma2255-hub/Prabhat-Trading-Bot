@@ -168,14 +168,15 @@ class TradingBot:
             current_price = self.client.get_market_data().get("last_price", 0)
             conn = sqlite3.connect("trades.db")
             c = conn.cursor()
-            c.execute("SELECT id, direction, entry_price, size, leverage FROM trades WHERE status = 'open'")
+            c.execute("SELECT id, side, entry_price, size, leverage FROM trades WHERE status = 'open'")
             stale_trades = c.fetchall()
 
             if stale_trades:
                 logger.warning(f"Found {len(stale_trades)} stale open positions - fixing with current price ${current_price}")
 
                 for trade in stale_trades:
-                    trade_id, direction, entry, size, leverage = trade
+                    trade_id, side, entry, size, leverage = trade
+                    direction = "LONG" if side in ["buy", "long"] else "SHORT"
                     entry = float(entry or 0)
                     size = float(size or 0)
                     leverage = float(leverage or 1)
@@ -186,7 +187,7 @@ class TradingBot:
                         pnl = (entry - current_price) * size * leverage
 
                     timestamp = datetime.now().isoformat()
-                    c.execute("""UPDATE trades SET timestamp_exit=?, exit_price=?, pnl_usd=?, status=?, outcome=?
+                    c.execute("""UPDATE trades SET close_time=?, close_price=?, pnl=?, status=?, close_reason=?
                                 WHERE id=?""", (timestamp, current_price, pnl, "closed", "STALE_CLEANUP", trade_id))
 
                 conn.commit()
@@ -597,10 +598,9 @@ class TradingBot:
 
                 logger.info(f"CLOSING: {direction} Entry={entry} Exit={current_price} Lev={leverage}x PnL=${pnl:.2f}")
 
-                if not config.DRY_RUN:
-                    close_result = self.client.close_position(pos["direction"], pos["size"])
-                else:
-                    logger.info("[DRY RUN] Would close position")
+                close_result = self.client.close_position(pos["direction"], pos["size"])
+                if close_result:
+                    logger.info(f"[PaperEngine] Close result: PnL=${close_result.get('pnl', 0):.2f}")
 
                 self.balance += pnl
 
