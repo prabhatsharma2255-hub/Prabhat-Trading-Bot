@@ -26,6 +26,15 @@ except:
 
 BOT_STATE_FILE = "bot_state.json"
 
+def get_bot_api_trades():
+    try:
+        r = requests.get("http://localhost:5001/api/trades", timeout=2)
+        if r.status_code == 200:
+            return r.json()
+    except:
+        pass
+    return {"open": [], "closed": []}
+
 IST = timedelta(hours=5, minutes=30)
 
 def now_ist():
@@ -118,17 +127,19 @@ def get_closed_trades():
 
 def get_all_data():
     price = get_current_price()
-    tm = get_trade_manager()
 
+    api_trades = get_bot_api_trades()
     bot_open = get_bot_open_positions()
+    tm = get_trade_manager()
     db_open = tm.get_open_trades() if tm else []
 
-    if bot_open and len(bot_open) > len(db_open):
+    # Priority: bot_state.json > bot API > DB
+    if bot_open:
         open_trades = bot_open
-    elif db_open:
-        open_trades = db_open
+    elif api_trades.get("open"):
+        open_trades = api_trades["open"]
     else:
-        open_trades = []
+        open_trades = db_open
 
     if tm is None and not bot_open:
         return {"price": price, "stats": {"total_pnl": 0, "daily_pnl": 0, "total_trades": 0, "wins": 0, "win_rate": 0, "open_positions": 0, "unrealized_pnl": 0},
@@ -138,6 +149,10 @@ def get_all_data():
         closed_trades = tm.get_closed_trades()
     else:
         closed_trades = []
+
+    # Use closed trades from bot API if DB is empty
+    if not closed_trades and api_trades.get("closed"):
+        closed_trades = api_trades["closed"]
 
     total_pnl = sum(t.get("pnl", 0) or 0 for t in closed_trades)
     wins = sum(1 for t in closed_trades if (t.get("pnl") or 0) > 0)
