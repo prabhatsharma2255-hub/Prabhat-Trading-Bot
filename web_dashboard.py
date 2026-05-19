@@ -587,6 +587,22 @@ def api_stats():
     return get_stats()
 
 
+@app.route('/api/health')
+def api_health():
+    """Phase 7: Health check endpoint for Render monitoring"""
+    tm = get_trade_manager()
+    price = get_current_price()
+    return {
+        "status": "ok",
+        "current_price": price,
+        "timestamp": fmt_ist(),
+        "db_trades_count": len(get_trades()) if tm else 0,
+        "db_connected": tm is not None,
+        "exchange_api": BOT_AVAILABLE and bool(getattr(config, 'DELTA_API_KEY', '')),
+        "mode": "dry_run" if getattr(config, 'DRY_RUN', True) else "live"
+    }
+
+
 @app.route('/api/current-price')
 def api_price():
     return {"price": get_current_price(), "timestamp": fmt_ist()}

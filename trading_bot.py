@@ -8,6 +8,7 @@ import time
 import logging
 import sqlite3
 from datetime import datetime, timezone, timedelta
+from logging.handlers import RotatingFileHandler
 
 IST = timezone(timedelta(hours=5, minutes=30))
 from typing import Dict, Optional, List
@@ -78,11 +79,16 @@ try:
 except ImportError:
     MoveDetector = None
 
+_log_handler = RotatingFileHandler(
+    config.LOG_FILE, maxBytes=config.LOG_MAX_BYTES, backupCount=config.LOG_BACKUP_COUNT
+)
+_log_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('trading_bot.log'),
+        _log_handler,
         logging.StreamHandler()
     ]
 )
@@ -112,6 +118,8 @@ class TradingBot:
         self.open_positions = []
         self.balance = config.STARTING_CAPITAL
         self._running = True  # FIXED: Add running flag for graceful shutdown
+        self._started_at = time.time()  # Phase 7: uptime tracking
+        self._last_heartbeat = time.time()
 
         if MoveDetector:
             try:
@@ -692,6 +700,25 @@ class TradingBot:
             thread.start()
             logger.info("Background sync thread started")
 
+        # Phase 7: Heartbeat thread (logs status every 5 min)
+        def heartbeat_loop():
+            while self._running:
+                now = time.time()
+                if now - self._last_heartbeat >= config.HEARTBEAT_INTERVAL_SEC:
+                    uptime = now - self._started_at
+                    health = self.get_health()
+                    logger.info(f"HEARTBEAT | Uptime: {uptime/60:.0f}m | "
+                                 f"Balance: ${health['balance']:.2f} | "
+                                 f"Open: {health['open_positions']} | "
+                                 f"Trades today: {health['trades_today']} | "
+                                 f"Last analysis: {health['last_analysis_ago']:.0f}s ago")
+                    self._last_heartbeat = now
+                time.sleep(60)
+
+        hb = threading.Thread(target=heartbeat_loop, daemon=True)
+        hb.start()
+        logger.info("Heartbeat thread started")
+
         # ADDITIONAL SYNC FOR MANUAL CLOSE DETECTION
         def sync_positions():
             while self._running:  # FIXED: Use running flag
@@ -810,6 +837,22 @@ class TradingBot:
         except Exception as e:
             logger.warning(f"Sync with exchange failed: {e}")
 
+    def get_health(self) -> Dict:
+        """Phase 7: Return bot health status dict"""
+        now = time.time()
+        uptime = now - self._started_at
+        return {
+            "status": "running" if self._running else "stopped",
+            "uptime_seconds": int(uptime),
+            "uptime_str": f"{int(uptime//3600)}h{int((uptime%3600)//60)}m{int(uptime%60)}s",
+            "balance": round(self.balance, 2),
+            "open_positions": len(self.open_positions),
+            "trades_today": self.ai_brain.trades_today if hasattr(self, 'ai_brain') else 0,
+            "last_analysis_ago": int(now - self.last_analysis_time) if self.last_analysis_time > 0 else -1,
+            "mode": "dry_run" if config.DRY_RUN else "live",
+            "running": self._running
+        }
+
     def stop(self):
         """FIXED: Graceful shutdown - cancel orders, close positions, exit cleanly"""
         logger.info("=" * 60)
@@ -850,7 +893,15 @@ class TradingBot:
                     if analysis and analysis.get("can_trade"):
                         self.execute_trade(analysis)
 
-                    market_data = self.client.get_market_data()
+                    # Phase 7: Retry market data fetch with backoff
+                    market_data = None
+                    for retry in range(3):
+                        market_data = self.client.get_market_data()
+                        if market_data:
+                            break
+                        if retry < 2:
+                            time.sleep(2 * (retry + 1))
+
                     if market_data:
                         current_price = market_data.get("last_price", 0)
                         if current_price > 0 and self.open_positions:
