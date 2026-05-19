@@ -346,12 +346,12 @@ class AIBrain:
         if self.scalp_trades_today >= 4:
             return SetupResult(False, "RIBBON_SCALP", "NONE", 0, 0, 0, 0, 0, conditions, "max_ribbon_reached")
 
-        if state.atr_ratio > 0.015:
+        if state.atr_ratio > 0.025:
             return SetupResult(False, "RIBBON_SCALP", "NONE", 0, 0, 0, 0, 0, conditions, "high_volatility")
 
         session, _ = self.get_session()
-        if session not in ["london", "ny"]:
-            return SetupResult(False, "RIBBON_SCALP", "NONE", 0, 0, 0, 0, 0, [], "session_not_allowed")
+        if session == "dead":
+            return SetupResult(False, "RIBBON_SCALP", "NONE", 0, 0, 0, 0, 0, [], "dead_session_only")
 
         # Use scalp_data if provided, otherwise fall back to state defaults
         ribbon_state = scalp_data.get("ribbon_state", "twisting") if scalp_data else state.ribbon_state
@@ -362,25 +362,16 @@ class AIBrain:
         if ribbon_state in ["bull", "bear"]:
             conditions.append("ribbon_aligned")
 
-        if ribbon_strength in ["strong", "moderate"]:
+        if ribbon_strength in ["strong", "moderate", "weak"]:
             conditions.append("ribbon_strong")
 
         if (ribbon_state == "bull" and delta_bias == "bull") or (ribbon_state == "bear" and delta_bias == "bear"):
             conditions.append("delta_agrees")
 
-        if (ribbon_state == "bull" and rsi_state == "fast_bull") or (ribbon_state == "bear" and rsi_state == "fast_bear"):
-            conditions.append("rsi_fast")
+        if (ribbon_state == "bull" and rsi_state in ["fast_bull", "neutral"]) or (ribbon_state == "bear" and rsi_state in ["fast_bear", "neutral"]):
+            conditions.append("rsi_ok")
 
-        if state.structure != "ranging":
-            if (ribbon_state == "bull" and state.structure == "bullish") or (ribbon_state == "bear" and state.structure == "bearish"):
-                conditions.append("structure_agree")
-            elif (ribbon_state == "bull" and state.structure == "bearish"):
-                return SetupResult(False, "RIBBON_SCALP", "NONE", 0, 0, 0, 0, 0, conditions, "structure_opposing")
-
-        if state.rvol > 1.3:
-            conditions.append("volume_ok")
-
-        all_met = len(conditions) >= 5
+        all_met = len(conditions) >= 3
 
         if all_met:
             direction = "LONG" if ribbon_state == "bull" else "SHORT"
@@ -416,25 +407,24 @@ class AIBrain:
         delta_bias = scalp_data.get("delta_bias", "neutral") if scalp_data else state.delta_bias
         rsi_3m = scalp_data.get("rsi_3m", 50) if scalp_data else state.rsi_3m
 
-        if volume_burst and burst_ago <= 1:
-            conditions.append("fresh_burst")
+        if volume_burst:
+            conditions.append("volume_burst")
+        elif state.rvol > 1.0:
+            conditions.append("rvol_boost")
 
-        if burst_quality == "high":
-            conditions.append("high_quality_burst")
+        if burst_quality in ["high", "medium"]:
+            conditions.append("quality_burst")
 
-        if (burst_direction == "bull" and micro_structure == "bullish") or (burst_direction == "bear" and micro_structure == "bearish"):
-            conditions.append("micro_agree")
+        if (burst_direction == "bull" and micro_structure in ["bullish", "ranging"]) or (burst_direction == "bear" and micro_structure in ["bearish", "ranging"]):
+            conditions.append("micro_ok")
 
-        if ribbon_state in ["bull", "bear", "compressed"]:
+        if ribbon_state in ["bull", "bear", "compressed", "twisting"]:
             conditions.append("ribbon_ok")
 
-        if (burst_direction == "bull" and delta_bias == "bull") or (burst_direction == "bear" and delta_bias == "bear"):
-            conditions.append("delta_agree")
+        if (burst_direction == "bull" and delta_bias in ["bull", "neutral"]) or (burst_direction == "bear" and delta_bias in ["bear", "neutral"]):
+            conditions.append("delta_ok")
 
-        if not ((burst_direction == "bull" and rsi_3m > 75) or (burst_direction == "bear" and rsi_3m < 25)):
-            conditions.append("rsi_not_exhausted")
-
-        all_met = len(conditions) >= 5
+        all_met = (volume_burst or state.rvol > 1.0) and len(conditions) >= 3
 
         if all_met:
             direction = "LONG" if burst_direction == "bull" else "SHORT"
@@ -479,18 +469,10 @@ class AIBrain:
         if (micro_bos == "bull" and ribbon_state in ["bull", "twisting"]) or (micro_bos == "bear" and ribbon_state in ["bear", "twisting"]):
             conditions.append("ribbon_ok")
 
-        if (micro_bos == "bull" and (delta_div == "bull" or delta_bias == "bull")) or (micro_bos == "bear" and (delta_div == "bear" or delta_bias == "bear")):
-            conditions.append("delta_confirm")
+        if (micro_bos == "bull" and (delta_div in ["bull", "none"] or delta_bias in ["bull", "neutral"])) or (micro_bos == "bear" and (delta_div in ["bear", "none"] or delta_bias in ["bear", "neutral"])):
+            conditions.append("delta_ok")
 
-        if state.rvol > 1.5:
-            conditions.append("volume_ok")
-
-        if micro_bos == "bull" and 40 <= rsi_3m <= 65:
-            conditions.append("rsi_room")
-        elif micro_bos == "bear" and 35 <= rsi_3m <= 60:
-            conditions.append("rsi_room")
-
-        all_met = len(conditions) >= 5
+        all_met = len(conditions) >= 3 and micro_bos in ["bull", "bear"]
 
         if all_met:
             direction = "LONG" if micro_bos == "bull" else "SHORT"
@@ -530,8 +512,8 @@ class AIBrain:
         vel_3m = velocity_data.get("velocity_3m", 0)
         vel_1m = velocity_data.get("velocity_1m", 0)
 
-        if abs(vel_3m) > 0.005:
-            momentum_persistent = abs(vel_1m) > 0.003
+        if abs(vel_3m) > 0.003:
+            momentum_persistent = abs(vel_1m) > 0.002
 
             candle_expansion = False
             if candles and len(candles) >= 3:
@@ -539,14 +521,14 @@ class AIBrain:
                 ranges = [(c.get("high", 0) - c.get("low", 0)) / c.get("close", 1) for c in recent]
                 avg_range = sum(ranges) / len(ranges) if ranges else 0
                 current_range = ranges[-1] if ranges else 0
-                candle_expansion = current_range > avg_range * 1.2
+                candle_expansion = current_range > avg_range * 1.1
 
             if momentum_persistent or candle_expansion:
                 conditions.append(f"velocity_{vel_3m*100:.1f}%")
             else:
                 conditions.append(f"velocity_weak")
         else:
-            return SetupResult(False, "ROCKET_RIDE", "NONE", 0, 0, 0, 0, 0, conditions, "velocity_below_0.5pct")
+            return SetupResult(False, "ROCKET_RIDE", "NONE", 0, 0, 0, 0, 0, conditions, "velocity_below_0.3pct")
 
         volume_burst = scalp_data.get("volume_burst", False) if scalp_data else getattr(state, 'volume_burst', False)
         burst_quality = scalp_data.get("burst_quality", 'none') if scalp_data else getattr(state, 'burst_quality', 'none')
@@ -572,22 +554,27 @@ class AIBrain:
         catalyst = False
         catalyst_reason = ""
 
-        if state.squeeze_fired:
+        if state.squeeze_fired or state.squeeze_on:
             catalyst = True
-            catalyst_reason = "squeeze_fired"
-        elif state.last_event in ["BOS_bull", "BOS_bear"] and state.event_candles_ago <= 2:
+            catalyst_reason = "squeeze"
+        elif state.last_event in ["BOS_bull", "BOS_bear"] and state.event_candles_ago <= 5:
             catalyst = True
-            catalyst_reason = "micro_bos"
+            catalyst_reason = "bos"
+        elif state.rvol > 1.2:
+            catalyst = True
+            catalyst_reason = "volume"
 
         if candles and len(candles) >= 10:
             for c in candles[-10:]:
-                if c.get("oi_change", 0) > 0.02:
+                if c.get("oi_change", 0) > 0.015:
                     catalyst = True
-                    catalyst_reason = "oi_spike"
+                    catalyst_reason = "oi"
                     break
 
         if not catalyst:
-            return SetupResult(False, "ROCKET_RIDE", "NONE", 0, 0, 0, 0, 0, conditions, "no_catalyst")
+            if state.rvol > 0.8:
+                catalyst = True
+                catalyst_reason = "fallback_rvol"
 
         conditions.append(f"catalyst_{catalyst_reason}")
 
@@ -645,11 +632,11 @@ class AIBrain:
         is_whale_bull = news_engine.whale_event_bull
         is_whale_bear = news_engine.whale_event_bear
 
-        score_threshold = 25 if is_whale else 35
+        score_threshold = 18 if is_whale else 25
         if abs(news_score) < score_threshold:
             return SetupResult(False, "NEWS_SPIKE", "NONE", 0, 0, 0, 0, 0, conditions, f"score_{news_score}_below_threshold")
 
-        if news_age > 8:
+        if news_age > 15:
             return SetupResult(False, "NEWS_SPIKE", "NONE", 0, 0, 0, 0, 0, conditions, f"news_age_{news_age:.0f}min")
 
         conditions.append(f"major_news_{news_score:.0f}")
@@ -674,10 +661,10 @@ class AIBrain:
 
         conditions.append("not_extended")
 
-        if state.rvol > 2.0:
+        if state.rvol > 1.5:
             conditions.append("volume_real")
         else:
-            return SetupResult(False, "NEWS_SPIKE", "NONE", 0, 0, 0, 0, 0, conditions, "volume_not_real")
+            conditions.append("volume_weak")
 
         direction = "LONG" if news_score > 0 else "SHORT"
 
@@ -715,30 +702,26 @@ class AIBrain:
             funding_bias = funding_data.get("funding_bias", "neutral")
             oi_change = funding_data.get("oi_change_pct", 0)
 
-        if funding_rate > 0.0008:
+        if funding_rate > 0.0005:
             direction = "SHORT"
             conditions.append("funding_long_crowded")
-        elif funding_rate < -0.0008:
+        elif funding_rate < -0.0005:
             direction = "LONG"
             conditions.append("funding_short_crowded")
         else:
             return SetupResult(False, "FUNDING_SQUEEZE", "NONE", 0, 0, 0, 0, 0, conditions, "funding_not_extreme")
 
-        if oi_change > 0:
-            conditions.append("oi_rising")
+        if oi_change != 0:
+            conditions.append("oi_changing")
         else:
-            return SetupResult(False, "FUNDING_SQUEEZE", "NONE", 0, 0, 0, 0, 0, conditions, "oi_not_rising")
+            return SetupResult(False, "FUNDING_SQUEEZE", "NONE", 0, 0, 0, 0, 0, conditions, "oi_flat")
 
         if direction == "SHORT":
-            if state.structure != "bullish":
+            if state.structure == "bullish":
                 conditions.append("price_against_long_crowd")
-            else:
-                return SetupResult(False, "FUNDING_SQUEEZE", "NONE", 0, 0, 0, 0, 0, conditions, "price_with_crowd")
         else:
-            if state.structure != "bearish":
+            if state.structure == "bearish":
                 conditions.append("price_against_short_crowd")
-            else:
-                return SetupResult(False, "FUNDING_SQUEEZE", "NONE", 0, 0, 0, 0, 0, conditions, "price_with_crowd")
 
         technical_count = 0
 
@@ -816,9 +799,9 @@ class AIBrain:
 
         momentum_accel = state.squeeze_momentum != "none" or state.rsi_divergence != "none"
 
-        squeeze_quality = vol_expansion or candle_body_strong or (momentum_accel and state.rvol > 0.8)
+        squeeze_quality = vol_expansion or candle_body_strong or (momentum_accel and state.rvol > 0.5)
 
-        all_met = (state.squeeze_fired or state.squeeze_on) and squeeze_quality
+        all_met = (state.squeeze_fired or state.squeeze_on) and (squeeze_quality or state.rvol > 0.8)
 
         if all_met and self.squeeze_trades_today < 1:
             direction = "LONG" if state.squeeze_momentum == "bull" else "SHORT"
@@ -897,28 +880,25 @@ class AIBrain:
         if state.liq_sweep_bull:
             if state.pattern in ["pin_bull", "bull_engulf"]:
                 liq_confirm = True
-            elif state.rsi_divergence == "bull_div" and state.rsi < 60:
+            elif state.rsi_divergence == "bull_div" and state.rsi < 70:
                 liq_confirm = True
-            elif state.macd_state == "accel_bull":
+            elif state.macd_state in ["accel_bull", "decel_bull"]:
+                liq_confirm = True
+            elif state.rsi < 30:
+                liq_confirm = True
+            elif state.structure == "ranging" and state.rsi < 40:
                 liq_confirm = True
         elif state.liq_sweep_bear:
             if state.pattern in ["pin_bear", "bear_engulf"]:
                 liq_confirm = True
-            elif state.rsi_divergence == "bear_div" and state.rsi > 40:
+            elif state.rsi_divergence == "bear_div" and state.rsi > 30:
                 liq_confirm = True
-            elif state.macd_state == "accel_bear":
+            elif state.macd_state in ["accel_bear", "decel_bear"]:
                 liq_confirm = True
-
-        if candles and len(candles) >= 2:
-            last_candle = candles[-1]
-            prev_candle = candles[-2]
-
-            if state.liq_sweep_bull:
-                if last_candle.get("close", 0) > prev_candle.get("close", 0):
-                    liq_confirm = True
-            elif state.liq_sweep_bear:
-                if last_candle.get("close", 0) < prev_candle.get("close", 0):
-                    liq_confirm = True
+            elif state.rsi > 70:
+                liq_confirm = True
+            elif state.structure == "ranging" and state.rsi > 60:
+                liq_confirm = True
 
         all_met = (state.liq_sweep_bull or state.liq_sweep_bear) and liq_confirm
 
@@ -980,8 +960,8 @@ class AIBrain:
             conditions.append("macd_ok")
 
         all_met = state.last_event in ["BOS_bull", "BOS_bear"] and \
-                  state.event_candles_ago < 5 and \
-                  state.rvol > 1.2
+                  state.event_candles_ago < 8 and \
+                  state.rvol > 0.9
 
         if all_met:
             direction = "LONG" if state.last_event == "BOS_bull" else "SHORT"
@@ -1072,7 +1052,14 @@ class AIBrain:
 
         pullback_quality = rsi_reset or macd_reexpansion or rejection_candle or trend_continuation
 
-        all_met = state.structure != "ranging" and pullback_quality
+        pullback_quality = pullback_quality or (
+            state.rsi < 40 and state.macd_state in ["accel_bull", "decel_bull"]
+        ) or (
+            state.rsi > 60 and state.macd_state in ["accel_bear", "decel_bear"]
+        )
+
+        allow_ranging = state.structure == "ranging" and (state.rsi < 45 or state.rsi > 55 or state.rvol > 1.0 or state.macd_state in ["accel_bull", "accel_bear", "decel_bull", "decel_bear"])
+        all_met = (state.structure != "ranging" or allow_ranging) and pullback_quality
 
         if all_met:
             direction = "LONG" if state.structure == "bullish" else "SHORT"
@@ -1133,8 +1120,7 @@ class AIBrain:
         if state.vwap_zone in ["fair", "high", "low"]:
             conditions.append("vwap_ok")
 
-        all_met = state.at_fib and state.which_fib == 0.618 and \
-                  state.pattern in ["pin_bull", "bull_engulf", "pin_bear", "bear_engulf"] and \
+        all_met = state.at_fib and state.which_fib in [0.382, 0.5, 0.618] and \
                   state.structure != "ranging"
 
         if all_met:
@@ -1188,39 +1174,24 @@ class AIBrain:
         if state.vwap_zone in ["extreme_high", "extreme_low"]:
             conditions.append("at_extreme")
 
-        if state.rsi > 72 or state.rsi < 28:
+        if state.rsi > 68 or state.rsi < 32:
             conditions.append("rsi_extreme")
 
-        if state.stoch_k > 85 or state.stoch_k < 15:
+        if state.stoch_k > 80 or state.stoch_k < 20:
             conditions.append("stoch_extreme")
 
         if state.macd_state in ["decel_bull", "decel_bear"]:
             conditions.append("momentum_fading")
 
-        if state.pattern in ["pin_bull", "pin_bear"]:
+        if state.pattern in ["pin_bull", "pin_bear", "bull_engulf", "bear_engulf"]:
             conditions.append("pattern_confirms")
 
         if state.vwap_zone != "fair":
             conditions.append("not_fair_value")
 
-        all_met = state.vwap_zone in ["extreme_high", "extreme_low"] and \
-                  (state.rsi > 72 or state.rsi < 28) and \
-                  (state.stoch_k > 85 or state.stoch_k < 15)
-
-        session, can_trade = self.get_session()
-        if session == "asia" or session == "dead":
-            return SetupResult(
-                triggered=False,
-                setup_name="VWAP_REVERSION",
-                direction="NONE",
-                risk_pct=0,
-                leverage=0,
-                stop_loss=0,
-                tp1=0,
-                tp2=0,
-                conditions_met=conditions,
-                reason="session_not_allowed"
-            )
+        all_met = state.vwap_zone in ["extreme_high", "extreme_low", "high", "low"] and \
+                  (state.rsi > 68 or state.rsi < 32) and \
+                  (state.stoch_k > 80 or state.stoch_k < 20)
 
         if all_met:
             direction = "SHORT" if state.vwap_zone == "extreme_high" else "LONG"
