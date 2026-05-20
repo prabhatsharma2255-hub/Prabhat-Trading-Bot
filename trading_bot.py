@@ -95,6 +95,9 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.addHandler(_log_handler)
+logger.addHandler(logging.StreamHandler())
 
 
 class TradingBot:
@@ -439,32 +442,51 @@ class TradingBot:
                 setup.tp2 = price - (atr * 4)
             logger.info(f"SL/TP not set by AI brain - using ATR fallback: SL={setup.stop_loss} TP2={setup.tp2}")
 
-        if price > 0 and setup.stop_loss > 0:
-            stop_distance = abs(price - setup.stop_loss)
-            if stop_distance > 0:
-                position_size = risk_amount / stop_distance
-            else:
-                position_size = risk_amount / price
-        else:
+        if price <= 0 or setup.stop_loss <= 0:
+            logger.warning(f"Invalid price or SL: price={price}, sl={setup.stop_loss}")
             return False
 
-        if position_size * price * setup.leverage < config.MIN_POSITION_USD:
-            logger.warning(f"Position too small: ${position_size * price * setup.leverage}")
+        stop_distance = abs(price - setup.stop_loss)
+        if stop_distance <= 0:
+            logger.warning(f"Stop distance is zero: price={price}, sl={setup.stop_loss}")
+            return False
+
+        effective_lev = setup.leverage
+        available_margin = self.balance * 0.95
+
+        for attempt in range(5):
+            margin_needed = (available_margin / stop_distance) * price / effective_lev
+            if margin_needed <= available_margin:
+                break
+            effective_lev = max(effective_lev - 1, 2)
+
+        if effective_lev != setup.leverage:
+            logger.warning(f"Adjusted leverage {setup.leverage}x -> {effective_lev}x to fit margin (need ${margin_needed:.2f})")
+
+        position_size = available_margin / stop_distance
+
+        margin_required = position_size * price / effective_lev
+        if margin_required > available_margin:
+            max_size = (available_margin * effective_lev) / price
+            position_size = max_size
+            logger.warning(f"Position size capped to {position_size:.4f} (margin ${margin_required:.2f})")
+
+        if position_size * price * effective_lev < config.MIN_POSITION_USD:
+            logger.warning(f"Position too small: ${position_size * price * effective_lev:.2f}")
             return False
 
         side = "buy" if direction == "LONG" else "sell"
 
-        logger.info(f">>> EXECUTING: {setup.setup_name} {direction} {position_size:.4f} @ ${price:.2f}")
+        logger.info(f">>> EXECUTING: {setup.setup_name} {direction} {position_size:.4f} @ ${price:.2f} Lev:{effective_lev}x")
 
-        # FIXED: Set leverage on exchange before placing order
         if not config.DRY_RUN:
-            self.client.set_leverage(setup.leverage)
+            self.client.set_leverage(effective_lev)
 
         order = self.client.place_order(
             "market", side, position_size, None,
             setup.stop_loss,
             setup.tp2,
-            setup.leverage
+            effective_lev
         )
 
         if order:
@@ -538,7 +560,7 @@ class TradingBot:
                         "tp": setup.tp2,
                         "sl": setup.stop_loss,
                         "size": position_size,
-                        "leverage": setup.leverage,
+"leverage": effective_lev,
                         "open_time": datetime.now(IST).isoformat()
                     })
                 except Exception as e:

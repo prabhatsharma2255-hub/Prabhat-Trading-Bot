@@ -27,7 +27,7 @@ else:
 SYMBOL = "BTCUSDT"
 
 # Account
-STARTING_CAPITAL = 100.0
+STARTING_CAPITAL = 200.0
 MIN_POSITION_USD = 10.0
 
 # ============================================================
