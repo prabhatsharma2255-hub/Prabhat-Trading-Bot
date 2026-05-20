@@ -49,8 +49,10 @@ def _fetch_price():
         try:
             r = requests.get("https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT", timeout=5)
             data = r.json()
-            if data and data.get("list"):
-                price = float(data["list"][0].get("lastPrice", 0))
+            result = data.get("result", {}) if data else {}
+            tickers = result.get("list") if isinstance(result, dict) else None
+            if tickers:
+                price = float(tickers[0].get("lastPrice", 0))
                 with _price_lock:
                     _last_price[0] = price
         except:
@@ -60,6 +62,19 @@ def _fetch_price():
 def get_current_price():
     with _price_lock:
         return _last_price[0]
+
+
+def get_live_price():
+    try:
+        r = requests.get("https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT", timeout=3)
+        data = r.json()
+        result = data.get("result", {}) if data else {}
+        tickers = result.get("list") if isinstance(result, dict) else None
+        if tickers:
+            return float(tickers[0].get("lastPrice", 0))
+    except:
+        pass
+    return get_current_price()
 
 def get_trade_manager():
     if TradeManager is None:
@@ -77,7 +92,7 @@ def get_bot_state():
     return None
 
 def get_all_data():
-    price = get_current_price()
+    price = get_live_price()
     bot_state = get_bot_state()
     tm = get_trade_manager()
 
