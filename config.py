@@ -9,17 +9,18 @@ import os
 # IMPORTANT: Set these as environment variables! NEVER commit real keys.
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "ogrEfpwUxNnuufk9rr")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "fqc4YSsfzzsvBO0oWXndbJKMkUWZvid9JRyq")
-FORCE_DRY_RUN = os.getenv("FORCE_DRY_RUN", "false").lower() in ("true", "1", "yes")
+FORCE_DRY_RUN = os.getenv("FORCE_DRY_RUN", "").lower() in ("true", "1", "yes")
+FORCE_LIVE = os.getenv("FORCE_LIVE", "").lower() in ("true", "1", "yes")
 
 # Live trading enabled
-if FORCE_DRY_RUN:
-    print("FORCE_DRY_RUN=True, running in simulation mode.")
+if FORCE_DRY_RUN or (not BYBIT_API_KEY or not BYBIT_API_SECRET):
+    print("DRY RUN MODE (simulation - no real trades)")
     DRY_RUN = True
-elif not BYBIT_API_KEY or not BYBIT_API_SECRET:
-    print("WARNING: Bybit API keys not set! Using DRY RUN mode.")
-    DRY_RUN = True
+elif FORCE_LIVE:
+    print("FORCE_LIVE=True - LIVE TRADING ENABLED.")
+    DRY_RUN = False
 else:
-    print("Bybit API keys loaded. LIVE TRADING ENABLED.")
+    print("WARNING: DRY_RUN is off but keys may be invalid. Set FORCE_DRY_RUN=true to force simulation.")
     DRY_RUN = False
 
 # Symbol

@@ -765,10 +765,10 @@ class TradingBot:
 
                 time.sleep(3)
 
-        if not config.DRY_RUN:
-            thread = threading.Thread(target=sync_loop, daemon=True)
-            thread.start()
-            logger.info("Background sync thread started")
+        # Background sync (run in both DRY_RUN and live mode)
+        thread = threading.Thread(target=sync_loop, daemon=True)
+        thread.start()
+        logger.info("Background sync thread started")
 
         # Phase 7: Heartbeat thread (logs status every 5 min)
         def heartbeat_loop():
