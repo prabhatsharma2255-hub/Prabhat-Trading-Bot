@@ -400,13 +400,18 @@ connectSSE();
 def index():
     try:
         data = get_all_data()
-        if data.get("price", 0):
-            html = HTML.replace('id="price">--', 'id="price">' + "%.2f" % data.get("price", 0))
-        else:
-            html = HTML
+        price_val = data.get("price", 0) or 0
         st = data.get("stats", {})
-        if st.get("dry_run"):
-            html = html.replace('id=dry-badge></span>', 'id=dry-badge></span><span class=dry-badge>DRY RUN</span>')
+        dry = st.get("dry_run", False)
+
+        lines = []
+        for line in HTML.split('\n'):
+            if 'id=price' in line and '--' in line:
+                line = line.replace('id=price>--', 'id=price>' + ("%.2f" % price_val if price_val else '--'))
+            if 'id=dry-badge' in line and dry:
+                line = line.replace('id=dry-badge></span>', 'id=dry-badge></span><span class=dry-badge>DRY RUN</span>')
+            lines.append(line)
+        html = '\n'.join(lines)
         return html
     except Exception as e:
         return HTML
