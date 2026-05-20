@@ -123,39 +123,34 @@ def get_all_data():
     open_list = []
 
     for t in open_trades:
-        if "pnl" in t:
-            lev = t.get("leverage", 1) or 1
-            sz = t.get("size", 0) or 0
-            entry = t.get("entry_price", 0)
-            pnl_val = t.get("pnl", 0) or 0
-            direction = t.get("direction", t.get("side", "sell"))
-            if isinstance(direction, str) and direction.lower() in ["buy", "long"]:
-                unrealized += (price - entry) * sz * lev
-            else:
-                unrealized += (entry - price) * sz * lev
-            open_list.append({
-                "id": t.get("trade_id", t.get("id", "")),
-                "direction": direction if isinstance(direction, str) else ("LONG" if direction == 1 else "SHORT"),
-                "entry": entry, "size": sz, "leverage": lev,
-                "sl": t.get("stop_loss", 0), "tp": t.get("tp", t.get("take_profit_2", 0)),
-                "pnl": round(pnl_val, 2)
-            })
+        direction = t.get("direction", t.get("side", "sell"))
+        if isinstance(direction, str) and direction.lower() in ["buy", "long"]:
+            d = "LONG"
+        elif isinstance(direction, int):
+            d = "LONG" if direction == 1 else "SHORT"
         else:
-            side = t.get("side", "sell")
-            lev = t.get("leverage", 1) or 1
-            sz = t.get("size", 0) or 0
-            entry = t.get("entry_price", 0)
-            if side == "buy":
-                upnl = (price - entry) * sz * lev
-            else:
-                upnl = (entry - price) * sz * lev
-            open_list.append({
-                "id": t.get("id", ""),
-                "direction": "LONG" if side == "buy" else "SHORT",
-                "entry": entry, "size": sz, "leverage": lev,
-                "sl": t.get("sl", 0), "tp": t.get("tp", 0),
-                "pnl": round(upnl, 2)
-            })
+            d = "LONG" if direction == "buy" else "SHORT"
+
+        lev = t.get("leverage", 1) or 1
+        sz = t.get("size", 0) or 0
+        entry = t.get("entry_price", 0) or t.get("entry", 0)
+
+        if d == "LONG":
+            upnl = (price - entry) * sz * lev
+        else:
+            upnl = (entry - price) * sz * lev
+
+        unrealized += upnl
+        open_list.append({
+            "id": t.get("trade_id", t.get("id", "")),
+            "direction": d,
+            "entry": entry,
+            "size": sz,
+            "leverage": lev,
+            "sl": t.get("stop_loss", 0) or 0,
+            "tp": t.get("tp", 0) or t.get("take_profit_2", 0) or 0,
+            "pnl": round(upnl, 2)
+        })
 
     # Closed trades grouped by day
     today_c, yesterday_c, history_c = [], [], []
@@ -426,16 +421,16 @@ def index():
 
         # Server-side render stats
         tpnl = st.get("total_pnl", 0)
-        upnl = st.get("unrealized_pnl", 0)
+        computed_upnl = sum(t["pnl"] for t in open_list)
         dpnl = st.get("daily_pnl", 0)
         trades = st.get("total_trades", 0)
         wr = st.get("win_rate", 0)
         open_cnt = st.get("open_positions", 0)
         tpnl_cls = "green" if tpnl >= 0 else "red"
-        upnl_cls = "green" if upnl >= 0 else "red"
+        upnl_cls = "green" if computed_upnl >= 0 else "red"
         dpnl_cls = "green" if dpnl >= 0 else "red"
         html = html.replace('id=s-total>$0</div>', 'id=s-total class="val ' + tpnl_cls + '">$' + str(tpnl) + '</div>')
-        html = html.replace('id=s-unreal>$0</div>', 'id=s-unreal class="val ' + upnl_cls + '">$' + str(upnl) + '</div>')
+        html = html.replace('id=s-unreal>$0</div>', 'id=s-unreal class="val ' + upnl_cls + '">$' + str(round(computed_upnl, 2)) + '</div>')
         html = html.replace('id=s-daily>$0</div>', 'id=s-daily class="val ' + dpnl_cls + '">$' + str(dpnl) + '</div>')
         html = html.replace('id=s-trades>0</div>', 'id=s-trades>' + str(trades) + '</div>')
         html = html.replace('id=s-winrate>0%</div>', 'id=s-winrate>' + str(wr) + '%</div>')
