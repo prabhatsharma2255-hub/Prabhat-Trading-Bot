@@ -20,8 +20,8 @@ elif FORCE_LIVE:
     print("FORCE_LIVE=True - LIVE TRADING ENABLED.")
     DRY_RUN = False
 else:
-    print("WARNING: DRY_RUN is off but keys may be invalid. Set FORCE_DRY_RUN=true to force simulation.")
-    DRY_RUN = False
+    print("DRY_RUN=True (FORCE_DRY_RUN or set FORCE_LIVE=true for live)")
+    DRY_RUN = True
 
 # Symbol
 SYMBOL = "BTCUSDT"
