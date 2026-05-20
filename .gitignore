@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.log
+*.db
+bot_state.json
+paper_state.json
+.env
+venv/
+.venv/
+*.egg-info/

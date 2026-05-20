@@ -7,9 +7,11 @@ services:
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"
-      - key: DELTA_API_KEY
+      - key: BYBIT_API_KEY
         sync: false
-      - key: DELTA_API_SECRET
+      - key: BYBIT_API_SECRET
         sync: false
+      - key: FORCE_DRY_RUN
+        value: "true"
       - key: NEWSAPI_KEY
         sync: false
