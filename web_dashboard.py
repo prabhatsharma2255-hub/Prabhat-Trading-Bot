@@ -400,18 +400,47 @@ connectSSE();
 def index():
     try:
         data = get_all_data()
-        price_val = data.get("price", 0) or 0
+        price_val = data.get("price", 0)
         st = data.get("stats", {})
         dry = st.get("dry_run", False)
+        open_list = data.get("open", [])
 
-        lines = []
-        for line in HTML.split('\n'):
-            if 'id=price' in line and '--' in line:
-                line = line.replace('id=price>--', 'id=price>' + ("%.2f" % price_val if price_val else '--'))
-            if 'id=dry-badge' in line and dry:
-                line = line.replace('id=dry-badge></span>', 'id=dry-badge></span><span class=dry-badge>DRY RUN</span>')
-            lines.append(line)
-        html = '\n'.join(lines)
+        html = HTML
+        price_str = ("%.2f" % price_val) if price_val else "--"
+        html = html.replace('>--<', '>' + price_str + '<')
+
+        if dry:
+            html = html.replace('id=dry-badge></span>', 'id=dry-badge></span><span class=dry-badge>DRY RUN</span>')
+
+        # Server-side render open positions
+        if open_list:
+            open_rows = ''.join([
+                '<tr><td class="' + ("long" if t["direction"] == "LONG" else "short") + '">' + t["direction"] + '</td>'
+                '<td>$' + str(t["entry"]) + '</td><td>' + str(t["size"]) + '</td><td>' + str(t["leverage"]) + 'x</td>'
+                '<td>$' + str(t["sl"]) + '</td><td>$' + str(t["tp"]) + '</td>'
+                '<td class="' + ("green" if t["pnl"] >= 0 else "red") + '">$' + str(t["pnl"]) + '</td>'
+                '<td><button onclick=closeTrade("' + t["id"] + '") class=btn>X</button></td></tr>'
+                for t in open_list
+            ])
+            html = html.replace('<tbody id=open-body><tr><td colspan=8 class=empty>No open positions</td></tr></tbody>', '<tbody id=open-body>' + open_rows + '</tbody>')
+
+        # Server-side render stats
+        tpnl = st.get("total_pnl", 0)
+        upnl = st.get("unrealized_pnl", 0)
+        dpnl = st.get("daily_pnl", 0)
+        trades = st.get("total_trades", 0)
+        wr = st.get("win_rate", 0)
+        open_cnt = st.get("open_positions", 0)
+        tpnl_cls = "green" if tpnl >= 0 else "red"
+        upnl_cls = "green" if upnl >= 0 else "red"
+        dpnl_cls = "green" if dpnl >= 0 else "red"
+        html = html.replace('id=s-total>$0</div>', 'id=s-total class="val ' + tpnl_cls + '">$' + str(tpnl) + '</div>')
+        html = html.replace('id=s-unreal>$0</div>', 'id=s-unreal class="val ' + upnl_cls + '">$' + str(upnl) + '</div>')
+        html = html.replace('id=s-daily>$0</div>', 'id=s-daily class="val ' + dpnl_cls + '">$' + str(dpnl) + '</div>')
+        html = html.replace('id=s-trades>0</div>', 'id=s-trades>' + str(trades) + '</div>')
+        html = html.replace('id=s-winrate>0%</div>', 'id=s-winrate>' + str(wr) + '%</div>')
+        html = html.replace('id=s-open>0</div>', 'id=s-open>' + str(open_cnt) + '</div>')
+
         return html
     except Exception as e:
         return HTML
