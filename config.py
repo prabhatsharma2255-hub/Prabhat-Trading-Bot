@@ -9,9 +9,13 @@ import os
 # IMPORTANT: Set these as environment variables! NEVER commit real keys.
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "ogrEfpwUxNnuufk9rr")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "fqc4YSsfzzsvBO0oWXndbJKMkUWZvid9JRyq")
+FORCE_DRY_RUN = os.getenv("FORCE_DRY_RUN", "false").lower() in ("true", "1", "yes")
 
 # Live trading enabled
-if not BYBIT_API_KEY or not BYBIT_API_SECRET:
+if FORCE_DRY_RUN:
+    print("FORCE_DRY_RUN=True, running in simulation mode.")
+    DRY_RUN = True
+elif not BYBIT_API_KEY or not BYBIT_API_SECRET:
     print("WARNING: Bybit API keys not set! Using DRY RUN mode.")
     DRY_RUN = True
 else:
