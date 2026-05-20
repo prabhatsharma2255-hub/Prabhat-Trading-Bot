@@ -2,16 +2,11 @@ services:
   - type: web
     name: trading-bot
     env: python
+    region: oregon
     buildCommand: pip install -r requirements.txt
-    startCommand: bash start_all.sh
+    startCommand: bash start.sh
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"
-      - key: BYBIT_API_KEY
-        sync: false
-      - key: BYBIT_API_SECRET
-        sync: false
       - key: FORCE_DRY_RUN
         value: "true"
-      - key: NEWSAPI_KEY
-        sync: false
